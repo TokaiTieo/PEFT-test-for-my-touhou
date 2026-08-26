@@ -1,6 +1,9 @@
 {
-  "_comment": "把下面这段合并进 LLaMA-Factory 的 data/dataset_info.json，并把 npc_dialogue.json 复制到其 data/ 目录下",
+  "_comment": "把下面条目合并进 LLaMA-Factory 的 data/dataset_info.json，并复制两个 JSON 数据文件",
   "npc_dialogue": {
     "file_name": "npc_dialogue.json"
+  },
+  "npc_eval": {
+    "file_name": "npc_eval.json"
   }
 }

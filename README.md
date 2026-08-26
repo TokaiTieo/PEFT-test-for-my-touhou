@@ -12,33 +12,37 @@
 
 ## 目前做到哪了
 
-仓库现在适合验证数据和训练流程，还没有可直接发布的成品模型。
+仓库现在已经具备第一轮基线训练所需的数据和评测流程，但还没有可直接发布的成品模型。
 
 | 项目 | 当前状态 |
 |---|---|
 | 后端 JSON 契约 | 已对照 `touhou` 后端代码核实 |
-| 种子训练数据 | 4 条，全部通过后端真实契约 |
-| 数据质检 | 可检查 14 个顶层字段和关键子结构 |
+| 训练数据 | 2000 条，覆盖 97 个有效 NPC 和 11 类场景 |
+| 数据质检 | 可检查 14 个顶层字段、状态更新子结构和跨集合泄漏 |
 | 手写 LoRA 训练 | 已实现，只对模型答案计算 loss |
 | LLaMA-Factory 配置 | 已提供正式训练和 smoke test 配置 |
-| 独立评测集 | 尚未制作，`data/npc_eval.json` 目前为空 |
+| 独立评测集 | 200 条，使用与训练集互斥的玩家动作模板 |
 | 训练后权重 | 尚未发布 |
 
-也就是说：现在可以检查格式、跑通代码，但不要拿 4 条样本直接训练正式模型。正式训练前至少还需要补齐分层训练集和独立评测集。
+也就是说：现在可以开始第一轮基线训练，并用固定评测集比较微调前后的格式遵循能力。数据是从游戏真实 NPC、地点和后端契约确定性生成的，不等同于 2000 条人工精写对白；如果第一轮评测发现角色口吻仍趋同，再针对失分角色补写高质量样本，而不是盲目扩大数量。
 
 ## 先跑一次数据检查
 
 ```bash
 git clone https://github.com/TokaiTieo/PEFT-test-for-my-touhou.git
 cd PEFT-test-for-my-touhou
-python data/quality_check.py data/npc_dialogue.json
+python data/quality_check.py data/npc_dialogue.json data/npc_eval.json
 ```
 
 正常情况下会看到：
 
 ```text
-共检查 4 条样本
+data/npc_dialogue.json: 共检查 2000 条样本
 全部通过 ✓
+data/npc_eval.json: 共检查 200 条样本
+全部通过 ✓
+npc_dialogue.json ↔ npc_eval.json: exact prompt 重叠 0
+npc_dialogue.json ↔ npc_eval.json: exact output 重叠 0
 ```
 
 质检脚本会检查：
@@ -48,7 +52,29 @@ python data/quality_check.py data/npc_dialogue.json
 - `description` 是否在 50–200 字之间；
 - `memory_updates`、`open_event`、`spellcard_result` 是否符合后端结构；
 - instruction 是否包含 NPC 信息和玩家输入；
-- 是否存在完全重复的 output。
+- 是否存在完全重复的 output；
+- 训练集和评测集之间是否有完全相同的 prompt 或 output。
+
+## 数据集是怎么来的
+
+[`scripts/generate_dataset.py`](scripts/generate_dataset.py) 会读取同级 `touhou` 仓库中的真实 NPC 档案和地点表，用固定种子生成可复现的数据。它不联网，也不调用付费模型 API。
+
+训练集按以下场景分层：日常 320、赠礼 180、协助 160、约定 160、秘密 120、开放事件 180、符卡 300、任务 180、交易 140、威胁退出 160、传闻 100，共 2000 条。评测集用另一套玩家动作模板生成 200 条，不参与训练。完整配额和覆盖数见 [`data/dataset_manifest.json`](data/dataset_manifest.json)。
+
+如果 `PEFT-test-for-my-touhou` 与 `touhou` 是同级目录，直接运行：
+
+```bash
+python scripts/generate_dataset.py
+python data/quality_check.py data/npc_dialogue.json data/npc_eval.json
+```
+
+否则显式指定游戏仓库：
+
+```bash
+python scripts/generate_dataset.py --touhou-root /path/to/touhou
+```
+
+固定随机种子为 `20260826`。同一份源档案和生成器会得到相同数据，适合审查、复现和后续迭代。
 
 ## 一条训练数据长什么样
 
@@ -67,7 +93,7 @@ python data/quality_check.py data/npc_dialogue.json
 1. 游戏运行时会把完整 prompt 作为一条 `user` 消息发送，不会另外拆出 `system` 消息。训练和推理脚本也必须保持这个格式。
 2. `output` 本身是一个 JSON 字符串，所以文件中会看到转义后的双引号。解析外层 JSON 后，output 还要能再次解析成对象。
 
-完整样例在 [`data/npc_dialogue.json`](data/npc_dialogue.json)。
+完整训练集在 [`data/npc_dialogue.json`](data/npc_dialogue.json)，独立评测集在 [`data/npc_eval.json`](data/npc_eval.json)。
 
 ## 游戏真正需要的三个子结构
 
@@ -149,7 +175,7 @@ pip install -e ".[torch,metrics]"
 
 然后：
 
-1. 把本仓库的 `data/npc_dialogue.json` 复制到 LLaMA-Factory 的 `data/`；
+1. 把本仓库的 `data/npc_dialogue.json` 和 `data/npc_eval.json` 复制到 LLaMA-Factory 的 `data/`；
 2. 把 `configs/dataset_info.snippet.json` 中的条目合并进 LLaMA-Factory 的 `data/dataset_info.json`；
 3. 使用本仓库中的 YAML 启动训练。
 
@@ -222,7 +248,7 @@ python infer.py --base-only
 
 ## 评测
 
-先准备一个完全不进入训练集的 `data/npc_eval.json`，再运行：
+仓库已经提供完全不进入训练集的 200 条 `data/npc_eval.json`。训练完成后运行：
 
 ```bash
 python eval/eval.py --adapter saves/qwen2-1.5b-npc-hf --skip-judge
@@ -269,23 +295,24 @@ DEEPSEEK_API_KEY=local
 ```text
 ├── configs/                    # LLaMA-Factory 训练配置
 ├── data/
-│   ├── npc_dialogue.json       # 种子训练样本
-│   ├── npc_eval.json           # 独立评测集，目前为空
+│   ├── npc_dialogue.json       # 2000 条正式训练集
+│   ├── npc_eval.json           # 200 条独立评测集
+│   ├── dataset_manifest.json   # 场景配额、覆盖数和隔离结果
 │   └── quality_check.py        # 数据契约质检
 ├── eval/
 │   ├── eval.py                 # 微调前后对比
 │   └── results/                # 评测输出
 ├── infer.py                    # 单条推理与 JSON 检查
+├── scripts/generate_dataset.py # 从真实游戏档案重建数据集
 ├── train_sft.py                # Transformers + PEFT 训练脚本
 └── requirements.txt
 ```
 
 ## 接下来要做的事
 
-- 从游戏真实 NPC 档案和 prompt 模板生成 3000–5000 条分层数据；
-- 补齐至少 200 条不参与训练的固定评测集；
-- 覆盖日常对话、关系变化、记忆、任务、开放事件、符卡和威胁退出等场景；
-- 按 NPC、剧情和相似 prompt 去重，防止训练集泄漏到评测集；
+- 跑完第一轮基座/微调对比，记录 JSON 合规率和各类场景失分；
+- 为口吻趋同或失分明显的角色补充人工精写样本；
+- 增加近似语义去重和按角色留出的泛化评测，而不只检查完全重复；
 - 统计真实 prompt 的 token 分布，再决定正式训练使用 4096 还是更长上下文；
 - 完成基座与微调模型对比后，再决定是否需要 DPO。
 

@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "generator": "scripts/generate_dataset.py",
+  "seed": 20260826,
+  "source": {
+    "npc_index": "touhou/worlds/world_touhou/npcs/npc_index.json",
+    "location_base": "touhou/worlds/world_touhou/locations/location_base.json",
+    "active_unique_npcs": 97,
+    "locations": 20
+  },
+  "train": {
+    "count": 2000,
+    "quotas": {
+      "gift": 180,
+      "open_event": 180,
+      "daily": 320,
+      "help": 160,
+      "secret": 120,
+      "promise": 160,
+      "trade": 140,
+      "task": 180,
+      "threat": 160,
+      "spellcard": 300,
+      "rumor": 100
+    },
+    "npc_count": 97
+  },
+  "eval": {
+    "count": 200,
+    "quotas": {
+      "help": 15,
+      "spellcard": 30,
+      "gift": 15,
+      "secret": 10,
+      "daily": 20,
+      "open_event": 20,
+      "promise": 15,
+      "threat": 20,
+      "rumor": 20,
+      "task": 20,
+      "trade": 15
+    },
+    "npc_count": 97
+  },
+  "isolation": {
+    "exact_prompt_overlap": 0,
+    "exact_output_overlap": 0
+  }
+}

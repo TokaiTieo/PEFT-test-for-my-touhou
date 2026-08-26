@@ -5,6 +5,7 @@ trust_remote_code: true
 ### method
 stage: sft
 do_train: true
+do_eval: true
 finetuning_type: lora
 lora_rank: 16
 lora_alpha: 32
@@ -15,6 +16,7 @@ lora_target: all
 ### dataset
 # ⚠️ 游戏真实 prompt（prompts/npc_dialogue.txt 填充后）很长，1024 会截断，云端用 4096
 dataset: npc_dialogue
+eval_dataset: npc_eval
 template: qwen
 cutoff_len: 4096
 overwrite_cache: true
@@ -24,15 +26,18 @@ preprocessing_num_workers: 8
 output_dir: saves/qwen2-1.5b-npc/lora-sft
 logging_steps: 10
 save_steps: 200
+eval_steps: 200
 plot_loss: true               # 自动画 loss 曲线，README 素材
 
 ### train
 per_device_train_batch_size: 2   # cutoff 4096 下 4090 24G 从 2 起试，OOM 再降
+per_device_eval_batch_size: 1
 gradient_accumulation_steps: 8   # 等效 batch 16
 learning_rate: 1.0e-4
 num_train_epochs: 3
 lr_scheduler_type: cosine
 warmup_ratio: 0.1
+eval_strategy: steps
 bf16: true
 gradient_checkpointing: true
 

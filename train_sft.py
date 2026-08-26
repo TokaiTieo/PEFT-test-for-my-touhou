@@ -7,6 +7,7 @@
 - 本地 3060 6GB 默认 batch 1；云端 4090 把 per_device_train_batch_size 改 4、grad accum 改 4
 """
 
+import inspect
 import os
 
 import torch
@@ -19,6 +20,7 @@ from peft import LoraConfig, get_peft_model
 
 MODEL = "Qwen/Qwen2-1.5B-Instruct"   # 或本地路径
 DATA = "data/npc_dialogue.json"
+EVAL_DATA = "data/npc_eval.json"
 OUT = "saves/qwen2-1.5b-npc-hf"
 MAX_LENGTH = int(os.environ.get("NPC_MAX_LENGTH", "4096"))
 
@@ -75,10 +77,13 @@ def to_text(ex):
 
 raw_ds = load_dataset("json", data_files=DATA, split="train")
 ds = raw_ds.map(to_text, remove_columns=raw_ds.column_names)
+raw_eval_ds = load_dataset("json", data_files=EVAL_DATA, split="train")
+eval_ds = raw_eval_ds.map(to_text, remove_columns=raw_eval_ds.column_names)
 
-args = TrainingArguments(
+training_kwargs = dict(
     output_dir=OUT,
     per_device_train_batch_size=1,        # 本地 3060；云端改 4
+    per_device_eval_batch_size=1,
     gradient_accumulation_steps=16,       # 云端改 4
     learning_rate=1e-4,
     num_train_epochs=3,
@@ -88,12 +93,17 @@ args = TrainingArguments(
     data_seed=42,
     logging_steps=10,
     save_steps=200,
+    eval_steps=200,
     bf16=True,
     report_to="none",
 )
+# Transformers 新版使用 eval_strategy，旧版使用 evaluation_strategy。
+strategy_key = "eval_strategy" if "eval_strategy" in inspect.signature(TrainingArguments).parameters else "evaluation_strategy"
+training_kwargs[strategy_key] = "steps"
+args = TrainingArguments(**training_kwargs)
 
 trainer = Trainer(
-    model=model, args=args, train_dataset=ds,
+    model=model, args=args, train_dataset=ds, eval_dataset=eval_ds,
     data_collator=DataCollatorForSeq2Seq(tokenizer, padding=True, pad_to_multiple_of=8),
 )
 trainer.train()
