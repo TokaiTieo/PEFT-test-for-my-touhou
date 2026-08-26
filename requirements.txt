@@ -1,0 +1,12 @@
+# 训练（方案 B）与推理
+torch>=2.1
+transformers>=4.40
+datasets
+peft>=0.10
+accelerate
+
+# 评测 judge（DeepSeek API，OpenAI 兼容）
+openai>=1.0
+
+# 方案 A 请单独安装 LLaMA-Factory，见 README
+# 部署到游戏：vLLM 或 llama.cpp（OpenAI 兼容服务），按需安装

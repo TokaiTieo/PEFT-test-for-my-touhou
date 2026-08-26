@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+saves/
+models/
+LLaMA-Factory/
+*.log
+eval/results/generations.json
+!eval/results/.gitkeep

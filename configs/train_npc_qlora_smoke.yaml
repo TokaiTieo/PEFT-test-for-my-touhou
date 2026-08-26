@@ -1,0 +1,40 @@
+# 本地 RTX 3060 Laptop 6GB smoke test 配置
+# 目的：只取 200 条跑通训练流程，验证环境/数据/模板无误，不追求效果
+# 用法：llamafactory-cli train configs/train_npc_qlora_smoke.yaml
+
+### model
+model_name_or_path: Qwen/Qwen2-1.5B-Instruct   # 或本地路径
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target: all
+
+### dataset
+dataset: npc_dialogue
+template: qwen
+cutoff_len: 1024                # smoke 只验证流程；截断会导致 JSON 不完整，属预期
+max_samples: 200            # 只取 200 条验证流程
+overwrite_cache: true
+preprocessing_num_workers: 4
+
+### output
+output_dir: saves/qwen2-1.5b-npc/lora-smoke
+logging_steps: 10
+save_steps: 100000          # 中间不存，省磁盘
+plot_loss: true
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 16
+learning_rate: 1.0e-4
+num_train_epochs: 1
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+gradient_checkpointing: true

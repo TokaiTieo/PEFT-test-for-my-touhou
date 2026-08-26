@@ -1,0 +1,47 @@
+### model
+model_name_or_path: Qwen/Qwen2-1.5B-Instruct   # 或本地路径
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target: all
+# quantization_bit: 4        # 显存不够再开（QLoRA），4090 24G 不需要
+
+### dataset
+# ⚠️ 游戏真实 prompt（prompts/npc_dialogue.txt 填充后）很长，1024 会截断，云端用 4096
+dataset: npc_dialogue
+template: qwen
+cutoff_len: 4096
+overwrite_cache: true
+preprocessing_num_workers: 8
+
+### output
+output_dir: saves/qwen2-1.5b-npc/lora-sft
+logging_steps: 10
+save_steps: 200
+plot_loss: true               # 自动画 loss 曲线，README 素材
+
+### train
+per_device_train_batch_size: 2   # cutoff 4096 下 4090 24G 从 2 起试，OOM 再降
+gradient_accumulation_steps: 8   # 等效 batch 16
+learning_rate: 1.0e-4
+num_train_epochs: 3
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+gradient_checkpointing: true
+
+# ---- 训练后命令备忘 ----
+# 启动:   llamafactory-cli train configs/train_npc_qlora.yaml
+# 合并:   llamafactory-cli export \
+#           --model_name_or_path Qwen/Qwen2-1.5B-Instruct \
+#           --adapter_name_or_path saves/qwen2-1.5b-npc/lora-sft \
+#           --template qwen --finetuning_type lora \
+#           --export_dir models/qwen2-1.5b-npc-merged
+# 验证:   llamafactory-cli chat \
+#           --model_name_or_path models/qwen2-1.5b-npc-merged --template qwen
