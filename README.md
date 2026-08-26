@@ -1,6 +1,6 @@
 # Qwen2-1.5B NPC 对话垂域微调（《东方异变录》适配版）
 
-> 目标：为同人互动游戏[《东方异变录》](https://github.com/TokaiTieo/touhou)微调一个本地 NPC 对话模型，
+> 目标：为本人的同人互动游戏[《东方异变录》](https://github.com/TokaiTieo/touhou)微调一个本地 NPC 对话模型，
 > 作为 DeepSeek API 之外的本地备选模型（离线兜底 / 降低成本）。
 > 基座模型：Qwen2-1.5B-Instruct
 > 硬件分工：本地 RTX 3060 Laptop 6GB = 跑通流程（smoke test）；算力云 RTX 4090 24GB = 正式训练；RTX 3050 4GB = 推理测试
