@@ -97,7 +97,7 @@ python scripts/generate_dataset.py --touhou-root /path/to/touhou
 
 ## 游戏真正需要的三个子结构
 
-下面的结构来自 `touhou` 后端实际解析与持久化代码，不是根据字段名猜出来的。
+下面的结构来自 `touhou` 后端实际解析与持久化代码。
 
 ### NPC 记忆
 
