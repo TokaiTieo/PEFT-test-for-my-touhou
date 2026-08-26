@@ -11,6 +11,7 @@
 
 import argparse
 import json
+import re
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -32,6 +33,22 @@ SAMPLE_SYSTEM = (
 SAMPLE_USER = "玩家：（往塞钱箱里投了一枚金币）‘巫女小姐，这点心意请收下。’"
 
 
+def clean_like_backend(text):
+    """Mirror touhou/backend/utils/ai_json.py for compatibility diagnostics."""
+    cleaned = str(text or "").lstrip("\ufeff").strip()
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[7:]
+    elif cleaned.startswith("```"):
+        cleaned = cleaned[3:]
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3]
+    cleaned = cleaned.strip()
+    first, last = cleaned.find("{"), cleaned.rfind("}")
+    if first != -1 and last > first:
+        cleaned = cleaned[first:last + 1]
+    return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", cleaned)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="Qwen/Qwen2-1.5B-Instruct")
@@ -46,21 +63,32 @@ def main():
         model = PeftModel.from_pretrained(model, args.adapter)
         model = model.merge_and_unload()
 
-    msgs = [{"role": "system", "content": SAMPLE_SYSTEM},
-            {"role": "user", "content": SAMPLE_USER}]
+    # 游戏运行时把完整模板作为一条 user 消息发送，评测必须保持同分布。
+    msgs = [{"role": "user", "content": f"{SAMPLE_SYSTEM}\n\n{SAMPLE_USER}"}]
     ids = tok.apply_chat_template(msgs, add_generation_prompt=True, return_tensors="pt").to(model.device)
-    out = model.generate(ids, max_new_tokens=512, temperature=0.7, top_p=0.9)
+    out = model.generate(ids, max_new_tokens=512, do_sample=False)
     text = tok.decode(out[0][ids.shape[1]:], skip_special_tokens=True)
     print(text)
 
     # ---- 契约合规检查 ----
     try:
         obj = json.loads(text)
+        strict = True
+    except json.JSONDecodeError:
+        strict = False
+        try:
+            obj = json.loads(clean_like_backend(text))
+        except json.JSONDecodeError as e:
+            print(f"\n[检查] JSON 解析失败 ✗：{e}")
+            return
+
+    try:
         missing = [k for k in REQUIRED_KEYS if k not in obj]
-        print(f"\n[检查] JSON 可解析 ✓；缺失必填字段: {missing if missing else '无'}")
+        mode = "严格 JSON" if strict else "仅经后端清理后可解析"
+        print(f"\n[检查] {mode} ✓；缺失必填字段: {missing if missing else '无'}")
         print(f"[检查] description 长度: {len(obj.get('description', ''))} 字（规则 50-200）")
-    except json.JSONDecodeError as e:
-        print(f"\n[检查] JSON 解析失败 ✗：{e}")
+    except (AttributeError, TypeError):
+        print("\n[检查] 顶层 JSON 必须是对象 ✗")
 
 
 if __name__ == "__main__":
