@@ -1,56 +1,81 @@
-# Qwen2-1.5B NPC 对话垂域微调（《东方异变录》适配版）
+# 《东方异变录》NPC 模型微调
 
-> 目标：为本人的同人互动游戏[《东方异变录》](https://github.com/TokaiTieo/touhou)微调一个本地 NPC 对话模型，
-> 作为 DeepSeek API 之外的本地备选模型（离线兜底 / 降低成本）。
-> 基座模型：Qwen2-1.5B-Instruct
-> 硬件分工：本地 RTX 3060 Laptop 6GB = 跑通流程（smoke test）；算力云 RTX 4090 24GB = 正式训练；RTX 3050 4GB = 推理测试
+这个仓库用来为我自己的同人互动游戏[《东方异变录》](https://github.com/TokaiTieo/touhou)微调 `Qwen2-1.5B-Instruct`，让它能够在游戏里充当本地 NPC 模型。
 
-⚠️ RTX 30 系支持 bf16；Windows 下 bitsandbytes 4bit 坑多，**本地训练不做 QLoRA**。当前两份历史命名为 `qlora` 的 YAML 实际都关闭了 4bit，运行的是普通 LoRA；只有显式启用 `quantization_bit: 4` 才是 QLoRA。
+它不是一个普通的聊天微调项目。游戏要求模型一边扮演灵梦、魔理沙、咲夜等角色，一边返回后端能够直接处理的 JSON。模型说得像不像角色很重要，但 JSON 写错了，整回合就可能无法写入存档。
 
-## 与通用 NPC 微调的关键差异
+项目的目标很直接：
 
-游戏里的 NPC 对话**不是纯文本生成**，而是严格契约：
+- 没网或不想调用云端 API 时，可以在本地继续游戏；
+- NPC 的语气、人设和世界观尽量稳定；
+- 关系、记忆、开放事件和符卡结果能够按游戏契约落盘。
 
-- 输入：`prompts/npc_dialogue.txt` 模板填充后的长 prompt（世界观 / 当前 NPC 信息 / 玩家信息 / 场景 / 对话历史 / 长期剧情摘要 / 态度集合 / NPC 记忆 / 线索板 / 玩家输入 / 规则）。游戏后端把整段 prompt 作为**单条 `user` 消息**发送，不使用单独的 `system` 消息。
-- 输出：**只输出 JSON**，必填 `description`、`is_dead`，可选 `relationship_update`、`memory_updates`、`task_updates`、`spellcard_result`、`exit_dialogue` 等 14 个字段
-- 文风规则：动作用（）包括、语言用‘’包括、`description` 50-200 字、遵守符卡规则
+## 目前做到哪了
 
-因此微调目标 = **人设一致性 + 契约 JSON 合规率**双达标。
+仓库现在适合验证数据和训练流程，还没有可直接发布的成品模型。
 
-## 仓库结构
+| 项目 | 当前状态 |
+|---|---|
+| 后端 JSON 契约 | 已对照 `touhou` 后端代码核实 |
+| 种子训练数据 | 4 条，全部通过后端真实契约 |
+| 数据质检 | 可检查 14 个顶层字段和关键子结构 |
+| 手写 LoRA 训练 | 已实现，只对模型答案计算 loss |
+| LLaMA-Factory 配置 | 已提供正式训练和 smoke test 配置 |
+| 独立评测集 | 尚未制作，`data/npc_eval.json` 目前为空 |
+| 训练后权重 | 尚未发布 |
 
-```
-├── README.md
-├── requirements.txt
-├── train_sft.py                 # 方案 B：Transformers + PEFT 手写训练脚本
-├── infer.py                     # 合并 LoRA + 推理验证（含契约合规自检）
-├── configs/
-│   ├── train_npc_qlora.yaml         # 方案 A：LLaMA-Factory 云端 4090 正式训练（cutoff 4096）
-│   ├── train_npc_qlora_smoke.yaml   # 方案 A：本地 3060 smoke test
-│   └── dataset_info.snippet.json    # LLaMA-Factory 数据集注册片段
-├── data/
-│   ├── npc_dialogue.json        # 训练数据（alpaca 格式，output 为契约 JSON 字符串）
-│   ├── npc_eval.json            # 测试集 200 条，绝不进训练（占位）
-│   └── quality_check.py         # 数据质检脚本（契约校验版）
-└── eval/
-    ├── eval.py                  # 微调前后对比：自动指标（JSON 合规率等）+ DeepSeek judge
-    └── results/                 # 评测结果输出目录
+也就是说：现在可以检查格式、跑通代码，但不要拿 4 条样本直接训练正式模型。正式训练前至少还需要补齐分层训练集和独立评测集。
+
+## 先跑一次数据检查
+
+```bash
+git clone https://github.com/TokaiTieo/PEFT-test-for-my-touhou.git
+cd PEFT-test-for-my-touhou
+python data/quality_check.py data/npc_dialogue.json
 ```
 
-## 数据格式与合成
+正常情况下会看到：
 
-alpaca 格式：`instruction` = 游戏真实模板填充后的 prompt（可裁剪低信息量段落），`input` = 玩家输入（也可并入 instruction），`output` = 契约 JSON 字符串。样例见 `data/npc_dialogue.json`。
+```text
+共检查 4 条样本
+全部通过 ✓
+```
 
-- **人设来源**：游戏 `worlds/world_touhou/npcs/npc_index.json` 的真实 NPC 档案（姓名/身份/性格/口癖/符卡风格/初始态度），选 10-20 个高出场 NPC
-- **世界观**：`worlds/world_touhou/worldview.txt`（可截取核心段落，保持各样本一致让模型记住）
-- **场景分布**：日常对话 / 供奉与赠礼 / 任务线索推进 / 关系升降 / 符卡挑战 / 威胁冲突（触发 `exit_dialogue`）/ 值得记住的事（触发 `memory_updates`）——各字段的触发情况都要有足够样本
-- 数据量目标 3000-5000 条，多轮对话占 30%+
+质检脚本会检查：
 
-当前 `npc_dialogue.json` 只是 4 条可执行的种子样例，用于验证格式和流程，不能代表可训练的数据规模；`npc_eval.json` 仍为空占位文件。
+- output 能否被标准 JSON 解析器读取；
+- 14 个顶层字段是否齐全；
+- `description` 是否在 50–200 字之间；
+- `memory_updates`、`open_event`、`spellcard_result` 是否符合后端结构；
+- instruction 是否包含 NPC 信息和玩家输入；
+- 是否存在完全重复的 output。
 
-### 已按游戏后端确认的三个子结构
+## 一条训练数据长什么样
 
-核对基准：`touhou` 仓库 `83ab94c` 的 `backend/services/ai_contracts.py`、`npc_memory_service.py`、`game_rules.py` 与 `turn_orchestrator.py`。
+数据采用 Alpaca 三字段格式：
+
+```json
+{
+  "instruction": "填充后的游戏 NPC prompt",
+  "input": "",
+  "output": "{\"description\": \"……\", \"is_dead\": false, ...}"
+}
+```
+
+这里有两个容易踩坑的地方：
+
+1. 游戏运行时会把完整 prompt 作为一条 `user` 消息发送，不会另外拆出 `system` 消息。训练和推理脚本也必须保持这个格式。
+2. `output` 本身是一个 JSON 字符串，所以文件中会看到转义后的双引号。解析外层 JSON 后，output 还要能再次解析成对象。
+
+完整样例在 [`data/npc_dialogue.json`](data/npc_dialogue.json)。
+
+## 游戏真正需要的三个子结构
+
+下面的结构来自 `touhou` 后端实际解析与持久化代码，不是根据字段名猜出来的。
+
+### NPC 记忆
+
+`memory_updates` 必须是对象数组，不能写成字符串数组。
 
 ```json
 {
@@ -60,14 +85,27 @@ alpaca 格式：`instruction` = 游戏真实模板填充后的 prompt（可裁�
       "summary": "玩家与灵梦共同稳定了神社附近的结界。",
       "tags": ["异变", "合作"],
       "importance": 8,
-      "emotion": "信任",
-      "knowledge_type": "direct",
-      "source_npc": null,
-      "confidence": 0.9,
-      "truth_status": "accepted",
-      "fact_key": null
+      "emotion": "信任"
     }
-  ],
+  ]
+}
+```
+
+最少需要 `npc_name` 和 `summary`。建议同时提供 `tags`；重要事件再填写 `importance` 和 `emotion`。后端最终只保留 summary 的前 300 字。
+
+高级字段包括：
+
+- `knowledge_type`：`direct`、`reported`、`inferred` 或 `system`；
+- `confidence`：0–1；
+- `truth_status`：`accepted`、`disputed` 或 `superseded`；
+- `source_npc`、`fact_key`：需要处理消息来源或事实冲突时再使用。
+
+### 开放事件
+
+没有触发事件时返回 `null`；触发时使用固定对象结构：
+
+```json
+{
   "open_event": {
     "title": "结界波纹",
     "type": "异变线索",
@@ -75,7 +113,18 @@ alpaca 格式：`instruction` = 游戏真实模板填充后的 prompt（可裁�
     "npc_name": "博丽灵梦",
     "description": "后山出现了可以继续追踪的异常波纹。",
     "hooks": ["前往后山调查", "询问灵梦"]
-  },
+  }
+}
+```
+
+后端至少需要 `title` 或 `description` 才会记录事件。训练数据统一给出完整结构，避免模型生成“看起来像事件、实际不会落盘”的空对象。
+
+### 符卡结果
+
+没有发生战斗时返回 `null`。发生战斗时，模型只需要生成下面五个字段：
+
+```json
+{
   "spellcard_result": {
     "opponent": "雾雨魔理沙",
     "spellcard_name": "恋符「Master Spark」",
@@ -86,22 +135,11 @@ alpaca 格式：`instruction` = 游戏真实模板填充后的 prompt（可裁�
 }
 ```
 
-- `memory_updates` 必须是**对象数组**，不是字符串数组。最小有效对象是 `npc_name` + `summary`；`tags` 等字段有后端默认值。训练样本推荐至少提供 `tags`，重要事件再给 `importance` / `emotion`。`knowledge_type` 只能是 `direct/reported/inferred/system`，`confidence` 为 0-1，`truth_status` 只能是 `accepted/disputed/superseded`。记忆落盘时 `summary` 会截到 300 字。
-- `open_event` 是对象或 `null`。入口模型目前接受任意字典，但持久化只消费上例这些键，并要求 `title` 或 `description` 至少一个非空；训练统一使用完整结构，避免生成“能解析但不会落盘”的空事件。
-- `spellcard_result` 是对象或 `null`。AI 侧只应生成上例 5 个键；`metrics`、`mastery`、`rule_source` 由后端确定性规则补充，不应放进训练答案。实际战斗中后端会覆盖 `opponent/spellcard_name/outcome/cost`，AI 的 `summary` 主要负责叙事补充，因此训练答案必须服从 prompt 末尾的“后端游戏规则预裁定”。
+游戏会用确定性规则重新计算对手、胜负、消耗、命中指标和熟练度。模型最重要的工作是写好 `summary`，并服从 prompt 末尾的“后端游戏规则预裁定”。不要在训练答案里生成 `metrics`、`mastery` 或 `rule_source`。
 
-后端 JSON 清理层容忍 UTF-8 BOM、最外层 Markdown 代码块、JSON 前后的解释文字和控制字符，但**不修复尾逗号或其他非法 JSON**。训练集仍只教原始严格 JSON，不能把容错层当成输出规范。`TOUHOU_LANGGRAPH=0` 的直连回退路径也调用同一个 `parse_turn_response`，契约完全相同。
+## 训练方式一：LLaMA-Factory
 
-### 数据质检规则（`data/quality_check.py`）
-
-1. output 必须是可解析 JSON，并使用固定 14 字段布局
-2. `description` 长度 50-200 字（游戏规则）
-3. `memory_updates` / `open_event` / `spellcard_result` 子结构与后端一致
-4. 重复 output 过滤
-5. 敏感词过滤
-6. instruction 结构完整（含「当前NPC信息」「玩家的动作和语言」段落）
-
-## 方案 A：LLaMA-Factory（主用）
+这是正式训练推荐使用的方式。
 
 ```bash
 git clone --depth 1 https://github.com/hiyouga/LLaMA-Factory.git
@@ -109,73 +147,146 @@ cd LLaMA-Factory
 pip install -e ".[torch,metrics]"
 ```
 
-1. 把 `data/npc_dialogue.json` 复制到 LLaMA-Factory 的 `data/` 下，按 `configs/dataset_info.snippet.json` 注册
-2. 云端 4090：`llamafactory-cli train configs/train_npc_qlora.yaml`
-3. 本地 3060 跑通流程：`llamafactory-cli train configs/train_npc_qlora_smoke.yaml`（cutoff 1024 会截断长 prompt，属预期，只验证流程）
-4. 合并权重 / 聊天验证命令见 yaml 内注释
+然后：
 
-## 方案 B：Transformers + PEFT 手写版（理解原理）
+1. 把本仓库的 `data/npc_dialogue.json` 复制到 LLaMA-Factory 的 `data/`；
+2. 把 `configs/dataset_info.snippet.json` 中的条目合并进 LLaMA-Factory 的 `data/dataset_info.json`；
+3. 使用本仓库中的 YAML 启动训练。
+
+正式训练：
+
+```bash
+llamafactory-cli train /path/to/PEFT-test-for-my-touhou/configs/train_npc_qlora.yaml
+```
+
+本地 smoke test：
+
+```bash
+llamafactory-cli train /path/to/PEFT-test-for-my-touhou/configs/train_npc_qlora_smoke.yaml
+```
+
+两份 YAML 的名字保留了早期的 `qlora` 命名，但目前没有打开 4bit 量化，实际运行的是普通 LoRA。只有取消 `quantization_bit: 4` 的注释或显式加入该配置后，才是 QLoRA。
+
+正式配置使用 4096 tokens；smoke 配置使用 1024 tokens，只用来确认环境、数据和训练流程能否正常工作。
+
+## 训练方式二：Transformers + PEFT
+
+`train_sft.py` 是一份更容易阅读和修改的手写实现：
 
 ```bash
 pip install -r requirements.txt
-python train_sft.py     # LoRA SFT，只监督 output 部分
-python infer.py         # 合并 LoRA 推理 + 契约合规自检
+python train_sft.py
 ```
 
-手写脚本会从中间裁剪超长 prompt，保留开头的人设/世界观与结尾的玩家输入/规则，并始终完整保留监督答案。默认长度 4096，可用 `NPC_MAX_LENGTH=8192` 等环境变量调整。不要用简单的右截断，否则长 prompt 可能把整段 output 截掉，产生零监督样本。
+默认设置：
 
-## 接入游戏（零代码改动）
+- 基座：`Qwen/Qwen2-1.5B-Instruct`；
+- LoRA rank：16；
+- 最大长度：4096；
+- batch size：1；
+- 只对 output 部分计算 loss。
 
-游戏 AI 层是 OpenAI 兼容客户端，走环境变量配置。本地起 OpenAI 兼容服务即可：
+可以通过环境变量调整最大长度：
 
 ```bash
-# 方式一：vLLM（云端 / 显存充足）
-python -m vllm.entrypoints.openai.api_server --model models/qwen2-1.5b-npc-merged --port 8001
-
-# 方式二：llama.cpp（3050 4GB，先转 GGUF 再 4bit 量化）
+NPC_MAX_LENGTH=8192 python train_sft.py
 ```
 
-然后设置：
+Windows PowerShell：
+
+```powershell
+$env:NPC_MAX_LENGTH = "8192"
+python train_sft.py
+```
+
+当 prompt 太长时，脚本会保留开头的人设与世界观、结尾的玩家输入与输出规则，并从中间裁剪。模型答案始终完整保留，避免右截断把监督内容一起删掉。
+
+## 推理检查
 
 ```bash
-DEEPSEEK_BASE_URL=http://127.0.0.1:8001/v1
-DEEPSEEK_MODEL=qwen2-1.5b-npc-merged
-DEEPSEEK_API_KEY=local   # 本地服务任意值
+python infer.py --adapter saves/qwen2-1.5b-npc-hf
 ```
+
+只测试基座模型：
+
+```bash
+python infer.py --base-only
+```
+
+脚本会区分两种情况：
+
+- 严格 JSON：模型直接输出合法对象；
+- 后端可恢复 JSON：例如外面包了 Markdown 代码块，游戏清理后仍能解析。
+
+后端可以处理 BOM、最外层代码块、JSON 前后的少量说明和控制字符，但不会修复尾逗号等非法语法。训练数据只接受严格 JSON。
 
 ## 评测
+
+先准备一个完全不进入训练集的 `data/npc_eval.json`，再运行：
+
+```bash
+python eval/eval.py --adapter saves/qwen2-1.5b-npc-hf --skip-judge
+```
+
+自动评测包括：
+
+- JSON 可解析率；
+- 核心字段完整率；
+- 14 字段完整率；
+- 三个关键子结构合规率；
+- description 长度合规率。
+
+如果设置了 DeepSeek API Key，还可以增加人设、连贯性和回复质量评分：
 
 ```bash
 export DEEPSEEK_API_KEY=sk-xxx
 python eval/eval.py --adapter saves/qwen2-1.5b-npc-hf
 ```
 
-- **自动指标**（不调 API）：严格 JSON 可解析率 / 核心字段完整率 / 14 字段完整率 / 三个关键子结构合规率 / description 长度合规率
-- **judge**：DeepSeek 对 description 三维 1-5 分（人设一致性 / 剧情连贯性 / 回复质量）
-- 输出 `eval/results/compare.md` 对比表
+PowerShell 使用：
 
-## 执行顺序与成本
+```powershell
+$env:DEEPSEEK_API_KEY = "sk-xxx"
+python eval/eval.py --adapter saves/qwen2-1.5b-npc-hf
+```
 
-| 步骤 | 在哪跑 | 预计耗时 |
-|---|---|---|
-| 环境安装 + 200 条 smoke test | 本地 3060 | 半天 |
-| 数据合成 3-5k 条 + 质检 | DeepSeek API | 3-5 天（成本 < 20 元） |
-| 正式 SFT（3 epoch，cutoff 4096） | 算力云 4090 | 约 3-5 小时（< 20 元） |
-| 评测 + 报告 | 本地 + API | 1-2 天 |
-| 可选 DPO（第 4 周） | 算力云 4090 | 约 1-2 小时 |
+结果会写入 `eval/results/compare.md` 和 `eval/results/generations.json`。
 
-DPO：同一套配置改三处——`stage: dpo`、`dataset: npc_preference`（chosen/rejected 格式，可用"契约合规 vs 不合规"构造偏好对）、加 `pref_beta: 0.1`。
+## 接入《东方异变录》
 
-## 训练记录
+训练完成后，先把模型部署成 OpenAI 兼容服务，例如 vLLM 或 llama.cpp。然后修改游戏使用的环境变量：
 
-### Loss 曲线
+```text
+DEEPSEEK_BASE_URL=http://127.0.0.1:8001/v1
+DEEPSEEK_MODEL=qwen2-1.5b-npc-merged
+DEEPSEEK_API_KEY=local
+```
 
-<!-- TODO: 训练完成后贴 LLaMA-Factory plot_loss 输出 -->
+游戏的 LangGraph 工作流和 `TOUHOU_LANGGRAPH=0` 直连回退都会经过同一个 JSON 契约解析器，因此不需要为两条路径分别训练模型。
 
-### 微调前后评测对比
+## 仓库结构
 
-<!-- TODO: 贴 eval/results/compare.md -->
+```text
+├── configs/                    # LLaMA-Factory 训练配置
+├── data/
+│   ├── npc_dialogue.json       # 种子训练样本
+│   ├── npc_eval.json           # 独立评测集，目前为空
+│   └── quality_check.py        # 数据契约质检
+├── eval/
+│   ├── eval.py                 # 微调前后对比
+│   └── results/                # 评测输出
+├── infer.py                    # 单条推理与 JSON 检查
+├── train_sft.py                # Transformers + PEFT 训练脚本
+└── requirements.txt
+```
 
-### 踩坑记录
+## 接下来要做的事
 
-<!-- TODO: 训练过程中持续补充 -->
+- 从游戏真实 NPC 档案和 prompt 模板生成 3000–5000 条分层数据；
+- 补齐至少 200 条不参与训练的固定评测集；
+- 覆盖日常对话、关系变化、记忆、任务、开放事件、符卡和威胁退出等场景；
+- 按 NPC、剧情和相似 prompt 去重，防止训练集泄漏到评测集；
+- 统计真实 prompt 的 token 分布，再决定正式训练使用 4096 还是更长上下文；
+- 完成基座与微调模型对比后，再决定是否需要 DPO。
+
+目前最重要的不是马上开训，而是先把训练集和评测集做对。
