@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import random
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -24,6 +25,14 @@ EVAL_QUOTAS = {
     "daily": 20, "gift": 15, "help": 15, "promise": 15, "secret": 10,
     "open_event": 20, "spellcard": 30, "task": 20, "trade": 15,
     "threat": 20, "rumor": 20,
+}
+SAVEBACK_QUOTAS = {
+    "save_dialogue": 250,
+    "save_memory": 200,
+    "save_event": 150,
+    "save_spell": 100,
+    "save_relationship": 150,
+    "save_mixed": 150,
 }
 TIMES = ["清晨", "上午", "正午", "午后", "黄昏", "入夜", "深夜"]
 WEATHERS = ["风里带着淡淡花香", "薄云正掠过天空", "远处传来断续蝉鸣", "空气里浮着细小灵光", "四周安静得能听见风声", "一阵短雨刚刚停下"]
@@ -258,6 +267,8 @@ def make_split(split, quotas, npcs, locations, seed):
     order = list(npcs)
     rng.shuffle(order)
     samples, rows = [], []
+    description_counts = Counter()
+    repeat_cues = ["再次", "这回", "又一次", "片刻后", "随即", "转而", "继而", "重新", "这一次", "稍作停顿后"]
     for index, category in enumerate(schedule):
         if index and index % len(order) == 0:
             rng.shuffle(order)
@@ -269,9 +280,217 @@ def make_split(split, quotas, npcs, locations, seed):
         time_name = f"幻想历第{index // 24 + 1}日·{TIMES[index % len(TIMES)]}·第{index % 24 + 1}刻"
         outcome = OUTCOMES[index % 3]
         result = build_result(category, ctx, index + 1, detail, weather, outcome)
+        original_description = result["description"]
+        repeated = description_counts[original_description]
+        if repeated:
+            result["description"] = original_description.replace("（", f"（{repeat_cues[(repeated - 1) % len(repeat_cues)]}", 1)
+        description_counts[original_description] += 1
         action = rng.choice(ACTIONS[split][category]).format(prop=prop, clue=clue, task=task)
         samples.append({"instruction": build_prompt(category, ctx, action, result, detail, time_name, weather), "input": "", "output": json.dumps(result, ensure_ascii=False, separators=(",", ":"))})
         rows.append((category, ctx["name"], ctx["location"]))
+    return samples, rows
+
+
+def bounded_description(text, npc_name):
+    value = " ".join(str(text or "").split())
+    if len(value) > 200:
+        head = value[:196]
+        stop = max(head.rfind(mark) for mark in "。！？；’）")
+        value = head[: stop + 1] if stop >= 60 else head.rstrip("，、：； ") + "。"
+    if len(value) < 50:
+        value += f"{npc_name}没有忘记前情，也没有把尚未确认的事情擅自当作结论。"
+    return value[:200]
+
+
+def sentence_excerpt(text, limit, fallback):
+    value = " ".join(str(text or "").split()).strip()
+    if not value:
+        return fallback
+    if len(value) <= limit:
+        return value.rstrip("。； ")
+    head = value[:limit]
+    stop = max(head.rfind(mark) for mark in "。！？；’）")
+    if stop >= 45:
+        return head[: stop + 1].rstrip("。； ")
+    return head.rstrip("，、：；。 ") + "……"
+
+
+def saved_speech(description):
+    speeches = re.findall(r"‘([^’]{2,})’", str(description or ""))
+    return max(speeches, key=len) if speeches else ""
+
+
+def saved_description(kind, ctx, anchor, variant, extra=None):
+    name, trait = ctx["name"], ctx["traits"].split("、")[0]
+    motions = ["略作停顿", "收回视线", "重新确认周围", "把语气放缓", "认真整理线索", "保持着一贯的分寸", "回想起当时的细节", "沿着前情继续说明", "没有回避玩家的目光", "把重要部分重新说了一遍", "先确认玩家没有误解", "压低声音避免惊动旁人"]
+    tails = ["这次回应与此前经历保持一致。", "眼前的判断没有覆盖掉既有记忆。", "话题由此自然接回先前的经历。", "双方都明白这不是第一次谈到此事。", "现场状态与存档中的前情没有冲突。", "这段交流没有凭空改变既有关系。"]
+    accents = ["没有丝毫迟疑地", "语调笃定地", "一边核对细节一边", "先分清亲历与传闻后", "没有夸大任何部分地", "谨慎却明确地", "顺着当时的情绪", "保留原有判断地", "确认时间顺序后", "没有回避关键事实地", "按自己的记忆", "结合眼前变化", "在不重置关系的前提下", "先排除矛盾信息后", "带着熟悉的语气", "认真而克制地", "从最清楚的细节说起"]
+    motion, tail = motions[variant % len(motions)], tails[variant % len(tails)]
+    accent = accents[variant % len(accents)]
+    if kind == "save_dialogue":
+        source_speech = saved_speech(anchor.get("description"))
+        if source_speech:
+            text = f"（{name}{motion}，{accent}保持着{trait}的反应）‘{sentence_excerpt(source_speech, 105, '')}’{tail}"
+        else:
+            source_action = shortened(str(anchor.get("description") or "").strip("（）"), 95, "对眼前变化作出反应")
+            text = f"（{name}{motion}，{accent}回看眼前的{source_action}）‘我记得前面的经过，先按眼前情况继续。’{tail}"
+    elif kind == "save_memory":
+        fact = sentence_excerpt(anchor.get("summary"), 125, "此前发生过一件值得记住的事")
+        text = f"（{name}{motion}，{accent}从长期记忆里找到对应细节）‘我当然记得：{fact}。’{tail}"
+    elif kind == "save_event":
+        detail = sentence_excerpt(anchor.get("description"), 115, "这条线索仍有继续调查的价值")
+        hook = sentence_excerpt((anchor.get("hooks") or ["继续调查"])[variant % len(anchor.get("hooks") or ["继续调查"])], 55, "继续调查")
+        text = f"（{name}{motion}，{accent}把“{anchor.get('title', '未结事件')}”重新摊开说明）‘{detail}。记录中的后续线索是“{hook}”。’{tail}"
+    elif kind == "save_spell":
+        summary = sentence_excerpt(anchor.get("summary"), 115, "双方依符卡规则完成了比试")
+        text = f"（{name}{motion}，{accent}重新复盘符卡战的关键一轮）‘{summary}。裁定是{anchor.get('outcome', '未裁定')}，我不会把胜负说反。’{tail}"
+    elif kind == "save_relationship":
+        state = sentence_excerpt(anchor.get("state"), 105, "中立")
+        text = f"（{name}{motion}，{accent}确认态度仍与此前积累相符）‘我现在对你的看法是“{state}”。新的行动会影响以后，但不会抹掉已经发生的事。’{tail}"
+    else:
+        speech = sentence_excerpt(saved_speech(anchor.get("description")), 75, sentence_excerpt(str(anchor.get("description") or "").strip("（）"), 75, "前面的经历我还记得。"))
+        fact = sentence_excerpt((extra or {}).get("summary"), 75, "既有记忆仍然有效")
+        text = f"（{name}{motion}，{accent}把当前场景与长期记忆对照起来）‘{speech}。至于另一件事，我也记得：{fact}。’{tail}"
+    return bounded_description(text, name)
+
+
+def blank_result(description, time_cost=0.25):
+    return {
+        "description": description,
+        "is_dead": False,
+        "time_cost": time_cost,
+        "new_energy_state": None,
+        "new_location": None,
+        "relationship_update": None,
+        "inventory_updates": [],
+        "reputation_updates": [],
+        "world_effects": [],
+        "task_updates": [],
+        "memory_updates": [],
+        "open_event": None,
+        "spellcard_result": None,
+        "exit_dialogue": False,
+    }
+
+
+def saved_action(kind, anchor, variant):
+    if kind in {"save_dialogue", "save_mixed"}:
+        raw = shortened(anchor.get("player_action"), 145, "继续刚才的话题")
+        if "（" in raw or "‘" in raw:
+            return raw
+        if len(raw) <= 18:
+            return f"（{raw}）"
+        return f"（沿着刚才的话题继续）‘{raw}’"
+    if kind == "save_memory":
+        prompts = ["你还记得我们之前经历的那件事吗？", "别只看眼前，你对过去那件事还有印象吗？", "请按你真正记住的内容复述，不要另编一段。", "这件事会影响你现在的判断吗？"]
+        return f"（确认对方的长期记忆）‘{prompts[variant % len(prompts)]}’"
+    if kind == "save_event":
+        hook = (anchor.get("hooks") or ["继续调查"])[variant % len(anchor.get("hooks") or ["继续调查"])]
+        return f"（指向事件记录中的后续线索）‘关于“{anchor.get('title', '那件事')}”，我们先{hook}怎么样？’"
+    if kind == "save_spell":
+        return f"（重新展开符卡）‘按原有记录再复盘一次“{anchor.get('spellcard_name', '这张符卡')}”，并遵守既定裁定。’"
+    return "（留意对方态度）‘经历了前面的事情，你现在究竟怎么看我？’"
+
+
+def build_saved_prompt(kind, ctx, anchor, result, action, variant, extra=None):
+    scene = anchor.get("scene") or ctx["location"]
+    history = shortened(anchor.get("history"), 260, "双方已经有过可被长期状态追踪的互动。")
+    relationship = anchor.get("state") if kind == "save_relationship" else ctx["attitude"]
+    memory_text = (extra or anchor).get("summary") or "无额外长期记忆"
+    event_text = anchor.get("title") if kind == "save_event" else "无正在续查的开放事件"
+    ruling = ""
+    if kind == "save_spell":
+        ruling = f"\n## 后端游戏规则预裁定（必须遵守）\n存档记录裁定：对{ctx['name']}的“{anchor.get('spellcard_name')}”结果为「{anchor.get('outcome')}」。不得反转。\n"
+    return f"""你是《东方异变录》中的 NPC。以下状态来自匿名化测试存档，必须保持前后连续，并只返回后端可解析的 JSON。
+
+## 世界观
+幻想乡由博丽大结界与外界隔离。冲突优先遵守非致命符卡规则；NPC 必须区分亲历记忆、传闻和未完成事件。
+
+## 当前NPC信息
+姓名：{ctx['name']}
+身份：{ctx['identity']}
+性格关键词：{ctx['traits']}
+符卡风格：{ctx['spell']}
+
+## 存档中的当前状态
+场景：{scene}
+当前关系：{ctx['name']}:{relationship}
+相关长期记忆：{shortened(memory_text, 180, '无')}
+相关开放事件：{event_text}
+场景记录序号：S{variant:04d}
+
+## 对话历史
+{history}
+
+## 玩家的动作和语言，动作包含在（）里
+玩家：{action}
+{ruling}
+## 输出规则
+1. 以{ctx['name']}的身份延续存档事实；不得失忆、凭空重置关系或把传闻写成亲历。
+2. description 为 50-200 字，动作用（），语言用‘’；只输出严格 JSON。
+3. 固定输出完整 14 字段。memory_updates 是对象数组；open_event 包含 title/type/scene/description/hooks；spellcard_result 只含 opponent/spellcard_name/outcome/summary/cost。
+4. 没有更新时使用 null 或空数组；不得反转后端预裁定。"""
+
+
+def make_saveback_samples(anchor_doc, npcs, locations, seed):
+    rng = random.Random(seed)
+    npc_by_name = {npc["name"]: npc for npc in npcs}
+    pools = {
+        "save_dialogue": list(anchor_doc["conversations"]),
+        "save_memory": list(anchor_doc["memories"]),
+        "save_event": list(anchor_doc["events"]),
+        "save_spell": list(anchor_doc["spells"]),
+        "save_relationship": list(anchor_doc["relationships"]),
+    }
+    for values in pools.values():
+        rng.shuffle(values)
+    schedule = [kind for kind, count in SAVEBACK_QUOTAS.items() for _ in range(count)]
+    rng.shuffle(schedule)
+    used = Counter()
+    seen_descriptions = set()
+    samples, rows = [], []
+    for offset, kind in enumerate(schedule):
+        pool_kind = "save_dialogue" if kind == "save_mixed" else kind
+        pool = pools[pool_kind]
+        anchor = pool[used[pool_kind] % len(pool)]
+        used[pool_kind] += 1
+        npc_name = anchor["npc_name"] if kind != "save_spell" else anchor["opponent"]
+        npc = npc_by_name.get(npc_name)
+        if not npc:
+            raise ValueError(f"存档锚点中的 NPC 不在 npc_index：{npc_name}")
+        ctx = context(npc, locations)
+        variant = offset + 1
+        extra = None
+        if kind == "save_mixed":
+            candidates = [item for item in pools["save_memory"] if item["npc_name"] == npc_name]
+            extra = candidates[variant % len(candidates)] if candidates else pools["save_memory"][variant % len(pools["save_memory"])]
+        description = saved_description(kind, ctx, anchor, variant, extra)
+        if description in seen_descriptions:
+            description = bounded_description(description.replace(f"（{npc_name}", f"（{npc_name}再次", 1), npc_name)
+        if description in seen_descriptions:
+            raise ValueError(f"存档驱动 description 仍然重复：{npc_name} / {kind}")
+        seen_descriptions.add(description)
+        result = blank_result(description, [0.25, 0.5, 0.75][variant % 3])
+        key = f"saveback:{kind}:{ctx['id']}:{variant:04d}"
+        if kind in {"save_dialogue", "save_mixed"}:
+            result["memory_updates"] = [memory(npc_name, f"玩家在{anchor.get('scene') or ctx['location']}延续了存档中的既有话题，{npc_name}的回应保持前后连贯。", ["存档续接", "对话"], 5, "中性", key)]
+        elif kind == "save_memory":
+            # 回忆已有事实本身不重复写入长期记忆，防止存档无限膨胀。
+            result["memory_updates"] = []
+        elif kind == "save_event":
+            result["memory_updates"] = [memory(npc_name, f"玩家与{npc_name}决定继续追查“{anchor['title']}”。", ["开放事件", "续查"], 7, "专注", key)]
+            result["open_event"] = {"id": f"evt_save_{variant:04d}", "title": anchor["title"], "type": anchor["type"] or "存档事件", "scene": anchor["scene"] or ctx["location"], "npc_name": npc_name, "description": shortened(anchor["description"], 260, "事件仍可继续调查。"), "hooks": anchor["hooks"][:4], "source": "saveback"}
+        elif kind == "save_spell":
+            result["new_energy_state"] = "略有疲惫"
+            result["memory_updates"] = [memory(npc_name, f"玩家与{npc_name}复盘了存档中的符卡“{anchor['spellcard_name']}”，确认裁定为{anchor['outcome']}。", ["符卡", "复盘"], 7, "竞争", key)]
+            result["spellcard_result"] = {"opponent": npc_name, "spellcard_name": anchor["spellcard_name"], "outcome": anchor["outcome"], "summary": shortened(anchor["summary"], 280, "双方按存档记录完成符卡复盘。"), "cost": anchor.get("cost") or "消耗少量灵力"}
+        elif kind == "save_relationship":
+            result["relationship_update"] = f"{npc_name}:{anchor['state']}"
+            result["memory_updates"] = [memory(npc_name, f"{npc_name}向玩家明确确认当前关系仍为“{anchor['state']}”。", ["关系", "确认"], 6, "坦诚", key)]
+        action = saved_action(kind, anchor, variant)
+        instruction = build_saved_prompt(kind, ctx, anchor, result, action, variant, extra)
+        samples.append({"instruction": instruction, "input": "", "output": json.dumps(result, ensure_ascii=False, separators=(",", ":"))})
+        rows.append((kind, npc_name, anchor.get("scene") or ctx["location"]))
     return samples, rows
 
 
@@ -304,24 +523,29 @@ def main():
     parser.add_argument("--train-out", default=repo / "data/npc_dialogue.json")
     parser.add_argument("--eval-out", default=repo / "data/npc_eval.json")
     parser.add_argument("--manifest-out", default=repo / "data/dataset_manifest.json")
+    parser.add_argument("--saveback-anchors", default=repo / "data/saveback_anchors.json")
     args = parser.parse_args()
 
     npcs, locations = load_world(find_touhou(repo, args.touhou_root))
     train, train_rows = make_split("train", TRAIN_QUOTAS, npcs, locations, args.seed)
+    anchor_doc = load_json(args.saveback_anchors)
+    saveback_train, saveback_rows = make_saveback_samples(anchor_doc, npcs, locations, args.seed + 2)
+    train.extend(saveback_train)
+    train_rows.extend(saveback_rows)
     evaluation, eval_rows = make_split("eval", EVAL_QUOTAS, npcs, locations, args.seed + 1)
-    assert len(train) == 2000 and len(evaluation) == 200
+    assert len(train) == 3000 and len(evaluation) == 200
     assert_isolated(train, evaluation)
     write_json(args.train_out, train)
     write_json(args.eval_out, evaluation)
     manifest = {
-        "schema_version": 1, "generator": "scripts/generate_dataset.py", "seed": args.seed,
-        "source": {"npc_index": "touhou/worlds/world_touhou/npcs/npc_index.json", "location_base": "touhou/worlds/world_touhou/locations/location_base.json", "active_unique_npcs": len(npcs), "locations": len(locations)},
-        "train": {"count": len(train), "quotas": dict(Counter(x[0] for x in train_rows)), "npc_count": len({x[1] for x in train_rows})},
+        "schema_version": 2, "generator": "scripts/generate_dataset.py", "seed": args.seed,
+        "source": {"npc_index": "touhou/worlds/world_touhou/npcs/npc_index.json", "location_base": "touhou/worlds/world_touhou/locations/location_base.json", "saveback_anchors": "data/saveback_anchors.json", "saveback_anchor_counts": anchor_doc["counts"], "active_unique_npcs": len(npcs), "locations": len(locations)},
+        "train": {"count": len(train), "base_generated": 2000, "saveback_generated": 1000, "description_unique": len({json.loads(x["output"])["description"] for x in train}), "saveback_description_unique": len({json.loads(x["output"])["description"] for x in saveback_train}), "quotas": dict(Counter(x[0] for x in train_rows)), "npc_count": len({x[1] for x in train_rows})},
         "eval": {"count": len(evaluation), "quotas": dict(Counter(x[0] for x in eval_rows)), "npc_count": len({x[1] for x in eval_rows})},
         "isolation": {"exact_prompt_overlap": 0, "exact_output_overlap": 0},
     }
     write_json(args.manifest_out, manifest)
-    print(f"已生成训练集 {len(train)} 条、评测集 {len(evaluation)} 条")
+    print(f"已生成训练集 {len(train)} 条（基础 2000 + 存档驱动 1000）、评测集 {len(evaluation)} 条")
     print(f"覆盖 {len(npcs)} 个有效 NPC；跨集合 prompt/output 完全重复均为 0")
 
 

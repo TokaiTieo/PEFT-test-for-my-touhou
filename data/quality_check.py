@@ -233,10 +233,20 @@ def main():
             failed = True
             continue
         errors, total = check(samples)
-        expected = 2000 if path.name == "npc_dialogue.json" else 200 if path.name == "npc_eval.json" else None
+        descriptions = []
+        for sample in samples:
+            try:
+                obj = json.loads(sample.get("output", ""))
+                if isinstance(obj, dict) and isinstance(obj.get("description"), str):
+                    descriptions.append(obj["description"])
+            except (AttributeError, json.JSONDecodeError):
+                pass
+        expected = 3000 if path.name == "npc_dialogue.json" else 200 if path.name == "npc_eval.json" else None
         if expected is not None and total != expected:
             errors[f"条数应为 {expected}，实际 {total}"] += 1
         print(f"{path}: 共检查 {total} 条样本")
+        if descriptions:
+            print(f"description 唯一文本 {len(set(descriptions))}/{len(descriptions)}")
         if errors:
             failed = True
             print(f"发现 {sum(errors.values())} 处问题：")

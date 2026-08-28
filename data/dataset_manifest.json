@@ -1,15 +1,27 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "generator": "scripts/generate_dataset.py",
   "seed": 20260826,
   "source": {
     "npc_index": "touhou/worlds/world_touhou/npcs/npc_index.json",
     "location_base": "touhou/worlds/world_touhou/locations/location_base.json",
+    "saveback_anchors": "data/saveback_anchors.json",
+    "saveback_anchor_counts": {
+      "conversations": 43,
+      "memories": 97,
+      "events": 14,
+      "spells": 5,
+      "relationships": 13
+    },
     "active_unique_npcs": 97,
     "locations": 20
   },
   "train": {
-    "count": 2000,
+    "count": 3000,
+    "base_generated": 2000,
+    "saveback_generated": 1000,
+    "description_unique": 3000,
+    "saveback_description_unique": 1000,
     "quotas": {
       "gift": 180,
       "open_event": 180,
@@ -21,7 +33,13 @@
       "task": 180,
       "threat": 160,
       "spellcard": 300,
-      "rumor": 100
+      "rumor": 100,
+      "save_event": 150,
+      "save_relationship": 150,
+      "save_mixed": 150,
+      "save_spell": 100,
+      "save_dialogue": 250,
+      "save_memory": 200
     },
     "npc_count": 97
   },

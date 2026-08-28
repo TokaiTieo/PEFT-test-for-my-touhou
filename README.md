@@ -17,14 +17,14 @@
 | 项目 | 当前状态 |
 |---|---|
 | 后端 JSON 契约 | 已对照 `touhou` 后端代码核实 |
-| 训练数据 | 2000 条，覆盖 97 个有效 NPC 和 11 类场景 |
+| 训练数据 | 3000 条：基础分层 2000 条 + 测试存档驱动 1000 条 |
 | 数据质检 | 可检查 14 个顶层字段、状态更新子结构和跨集合泄漏 |
 | 手写 LoRA 训练 | 已实现，只对模型答案计算 loss |
 | LLaMA-Factory 配置 | 已提供正式训练和 smoke test 配置 |
 | 独立评测集 | 200 条，使用与训练集互斥的玩家动作模板 |
 | 训练后权重 | 尚未发布 |
 
-也就是说：现在可以开始第一轮基线训练，并用固定评测集比较微调前后的格式遵循能力。数据是从游戏真实 NPC、地点和后端契约确定性生成的，不等同于 2000 条人工精写对白；如果第一轮评测发现角色口吻仍趋同，再针对失分角色补写高质量样本，而不是盲目扩大数量。
+也就是说：现在可以开始第一轮基线训练，并用固定评测集比较微调前后的格式遵循能力。其中 1000 条新增数据参考了真实测试存档中的连续对话、长期记忆、开放事件、符卡与关系状态；这些内容经过匿名化和去重，但仍不等同于 3000 条人工精写对白。
 
 ## 先跑一次数据检查
 
@@ -37,9 +37,11 @@ python data/quality_check.py data/npc_dialogue.json data/npc_eval.json
 正常情况下会看到：
 
 ```text
-data/npc_dialogue.json: 共检查 2000 条样本
+data/npc_dialogue.json: 共检查 3000 条样本
+description 唯一文本 3000/3000
 全部通过 ✓
 data/npc_eval.json: 共检查 200 条样本
+description 唯一文本 200/200
 全部通过 ✓
 npc_dialogue.json ↔ npc_eval.json: exact prompt 重叠 0
 npc_dialogue.json ↔ npc_eval.json: exact output 重叠 0
@@ -57,9 +59,11 @@ npc_dialogue.json ↔ npc_eval.json: exact output 重叠 0
 
 ## 数据集是怎么来的
 
-[`scripts/generate_dataset.py`](scripts/generate_dataset.py) 会读取同级 `touhou` 仓库中的真实 NPC 档案和地点表，用固定种子生成可复现的数据。它不联网，也不调用付费模型 API。
+[`scripts/generate_dataset.py`](scripts/generate_dataset.py) 会读取同级 `touhou` 仓库中的真实 NPC 档案、地点表，以及已经匿名化的 [`data/saveback_anchors.json`](data/saveback_anchors.json)，用固定种子生成可复现的数据。它不联网，也不调用付费模型 API。
 
-训练集按以下场景分层：日常 320、赠礼 180、协助 160、约定 160、秘密 120、开放事件 180、符卡 300、任务 180、交易 140、威胁退出 160、传闻 100，共 2000 条。评测集用另一套玩家动作模板生成 200 条，不参与训练。完整配额和覆盖数见 [`data/dataset_manifest.json`](data/dataset_manifest.json)。
+基础训练集按以下场景分层：日常 320、赠礼 180、协助 160、约定 160、秘密 120、开放事件 180、符卡 300、任务 180、交易 140、威胁退出 160、传闻 100，共 2000 条。
+
+另外 1000 条来自 `touhousaveback` 的测试结果：真实对白续接 250、长期记忆召回 200、开放事件续查 150、符卡复盘 100、关系连续性 150、多状态混合 150。派生锚点包括 43 段连续对话、97 条长期记忆、14 个开放事件、5 次符卡记录和 13 个关系状态，所有玩家姓名、角色 UUID、高权限 prompt 与时间戳均已移除。评测集仍保持独立的 200 条，不吸收这些存档锚点。完整配额见 [`data/dataset_manifest.json`](data/dataset_manifest.json)。
 
 如果 `PEFT-test-for-my-touhou` 与 `touhou` 是同级目录，直接运行：
 
@@ -68,13 +72,19 @@ python scripts/generate_dataset.py
 python data/quality_check.py data/npc_dialogue.json data/npc_eval.json
 ```
 
+如果需要从本地测试存档重新提取锚点，先运行：
+
+```bash
+python scripts/extract_saveback_anchors.py --save-root /path/to/touhousaveback
+```
+
 否则显式指定游戏仓库：
 
 ```bash
 python scripts/generate_dataset.py --touhou-root /path/to/touhou
 ```
 
-固定随机种子为 `20260826`。同一份源档案和生成器会得到相同数据，适合审查、复现和后续迭代。
+固定随机种子为 `20260826`。同一份源档案、锚点和生成器会得到相同数据，适合审查、复现和后续迭代。
 
 ## 一条训练数据长什么样
 
@@ -295,15 +305,18 @@ DEEPSEEK_API_KEY=local
 ```text
 ├── configs/                    # LLaMA-Factory 训练配置
 ├── data/
-│   ├── npc_dialogue.json       # 2000 条正式训练集
+│   ├── npc_dialogue.json       # 3000 条正式训练集
 │   ├── npc_eval.json           # 200 条独立评测集
+│   ├── saveback_anchors.json   # 测试存档的匿名化剧情锚点
 │   ├── dataset_manifest.json   # 场景配额、覆盖数和隔离结果
 │   └── quality_check.py        # 数据契约质检
 ├── eval/
 │   ├── eval.py                 # 微调前后对比
 │   └── results/                # 评测输出
 ├── infer.py                    # 单条推理与 JSON 检查
-├── scripts/generate_dataset.py # 从真实游戏档案重建数据集
+├── scripts/
+│   ├── extract_saveback_anchors.py # 从测试存档提取匿名化锚点
+│   └── generate_dataset.py     # 从真实游戏档案和锚点重建数据集
 ├── train_sft.py                # Transformers + PEFT 训练脚本
 └── requirements.txt
 ```
