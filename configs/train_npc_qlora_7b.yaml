@@ -1,0 +1,53 @@
+### model
+model_name_or_path: Qwen/Qwen2.5-7B-Instruct   # 已下载在数据盘 hf cache
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+do_eval: true
+finetuning_type: lora
+lora_rank: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target: all
+# quantization_bit: 4        # 显存不够再开（QLoRA），3090 24G bf16+LoRA 先不开
+
+### dataset
+# ⚠️ 游戏真实 prompt（prompts/npc_dialogue.txt 填充后）很长，1024 会截断，云端用 4096
+dataset: npc_dialogue
+eval_dataset: npc_eval
+template: qwen
+cutoff_len: 4096
+overwrite_cache: true
+preprocessing_num_workers: 8
+
+### output
+output_dir: saves/qwen2.5-7b-npc/lora-sft
+logging_steps: 10
+save_steps: 200
+eval_steps: 200
+plot_loss: true               # 自动画 loss 曲线，README 素材
+
+### train
+per_device_train_batch_size: 1   # 7B bf16 权重 ~15G，batch 只能开 1
+per_device_eval_batch_size: 1
+gradient_accumulation_steps: 16  # 等效 batch 16，与 1.5B 对齐
+learning_rate: 1.0e-4
+num_train_epochs: 3
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+eval_strategy: steps
+bf16: true
+gradient_checkpointing: true
+
+# ---- 训练后命令备忘 ----
+# 启动:   llamafactory-cli train configs/train_npc_qlora_7b.yaml
+# 合并:   llamafactory-cli export \
+#           --model_name_or_path Qwen/Qwen2.5-7B-Instruct \
+#           --adapter_name_or_path saves/qwen2.5-7b-npc/lora-sft \
+#           --template qwen --finetuning_type lora \
+#           --export_dir models/qwen2.5-7b-npc-merged
+# 评测:   python3 eval/eval.py --base Qwen/Qwen2.5-7B-Instruct \
+#           --adapter /root/autodl-tmp/LLaMA-Factory/saves/qwen2.5-7b-npc/lora-sft/checkpoint-XXX \
+#           --data data/npc_eval.json --skip-judge
