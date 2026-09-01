@@ -59,7 +59,10 @@ def generate(model, tok, samples, max_new_tokens=512):
             prompt += "\n\n" + str(s["input"]).strip()
         # 与游戏 backend 的 OpenAI 调用一致：完整 prompt 是单条 user 消息。
         msgs = [{"role": "user", "content": prompt}]
-        ids = tok.apply_chat_template(msgs, add_generation_prompt=True, return_tensors="pt").to(model.device)
+        raw = tok.apply_chat_template(msgs, add_generation_prompt=True, return_tensors="pt")
+        # transformers 5.x 返回 BatchEncoding，4.x 返回 Tensor，做双兼容
+        ids = raw["input_ids"] if hasattr(raw, "keys") else raw
+        ids = ids.to(model.device)
         with torch.no_grad():
             out = model.generate(ids, max_new_tokens=max_new_tokens, do_sample=False)
         outs.append(tok.decode(out[0][ids.shape[1]:], skip_special_tokens=True))
