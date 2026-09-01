@@ -180,21 +180,31 @@ def main():
     m_before, m_after = auto_metrics(out_before), auto_metrics(out_after)
     rows = [(k, m_before[k], m_after[k]) for k in m_before]
 
-    if not args.skip_judge:
-        j_before, j_after = judge(samples, out_before), judge(samples, out_after)
-        rows += [(f"judge-{d}", j_before[d], j_after[d]) for d in DIMS]
+    # 先落盘再 judge：judge 失败（如缺 API key）不丢已生成的结果
+    def save(rows):
+        table = fmt_table(rows)
+        print("\n" + table)
+        Path(args.out).mkdir(parents=True, exist_ok=True)
+        with open(Path(args.out) / "compare.md", "w", encoding="utf-8") as f:
+            f.write("# 微调前后对比\n\n" + table + "\n")
+        with open(Path(args.out) / "generations.json", "w", encoding="utf-8") as f:
+            json.dump([{"instruction": s["instruction"], "input": s.get("input", ""),
+                        "before": b, "after": a}
+                       for s, b, a in zip(samples, out_before, out_after)],
+                      f, ensure_ascii=False, indent=2)
 
-    table = fmt_table(rows)
-    print("\n" + table)
-    Path(args.out).mkdir(parents=True, exist_ok=True)
-    with open(Path(args.out) / "compare.md", "w", encoding="utf-8") as f:
-        f.write("# 微调前后对比\n\n" + table + "\n")
-    with open(Path(args.out) / "generations.json", "w", encoding="utf-8") as f:
-        json.dump([{"instruction": s["instruction"], "input": s.get("input", ""),
-                    "before": b, "after": a}
-                   for s, b, a in zip(samples, out_before, out_after)],
-                  f, ensure_ascii=False, indent=2)
+    save(rows)
     print(f"\n已写入 {args.out}/compare.md 与 generations.json")
+
+    if not args.skip_judge:
+        try:
+            j_before, j_after = judge(samples, out_before), judge(samples, out_after)
+        except KeyError:
+            print("\n未设置 DEEPSEEK_API_KEY，跳过 judge。设置后重跑或加 --skip-judge")
+        else:
+            rows += [(f"judge-{d}", j_before[d], j_after[d]) for d in DIMS]
+            save(rows)
+            print(f"\njudge 分数已并入 {args.out}/compare.md")
 
 
 if __name__ == "__main__":
