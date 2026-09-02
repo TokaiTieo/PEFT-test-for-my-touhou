@@ -367,6 +367,12 @@ python eval/judge_only.py eval/results/generations.json
 python eval/fence_check.py eval/results/generations.json
 ```
 
+生成人工抽读包（抽 30 条微调后输出供人读，带串味/破墙预筛标记）用 `eval/make_review_pack.py`：
+
+```bash
+python eval/make_review_pack.py eval/results/generations.json --npc-index /path/to/npc_index.json
+```
+
 ## 接入《东方异变录》
 
 训练完成后，先把模型部署成 OpenAI 兼容服务，例如 vLLM 或 llama.cpp。然后修改游戏使用的环境变量：
