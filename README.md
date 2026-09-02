@@ -10,6 +10,53 @@
 - NPC 的语气、人设和世界观尽量稳定；
 - 关系、记忆、开放事件和符卡结果能够按游戏契约落盘。
 
+## 训练结果
+
+第一轮基线已完成：AutoDL RTX 3090 24G，LLaMA-Factory，LoRA r16/alpha32，bf16，cutoff 4096，等效 batch 16，3 epochs（564 步）。1.5B 训练 43 分钟，7B 约 2 小时。
+
+### 主结果：Qwen2-1.5B-Instruct + LoRA（checkpoint-564）
+
+| 指标 | 微调前 | 微调后 |
+|---|---|---|
+| JSON 可解析率 | 4.50% | **98.00%** |
+| 核心字段完整率 | 1.50% | **98.00%** |
+| 14 字段完整率 | 0.50% | **98.00%** |
+| 关键子结构合规率 | 0.00% | **98.00%** |
+| 长度合规率 | 0.00% | **97.50%** |
+
+基座的主要失败模式是给 JSON 包 Markdown 围栏：去掉围栏后基座可解析率为 85.5%，但游戏后端要求输出可被 `json.loads` 直接解析，因此裸解析率才是交付指标。围栏剥离统计见 [`eval/fence_check.py`](eval/fence_check.py)。
+
+### epoch 消融（200 条独立评测集，微调后）
+
+| checkpoint | 可解析 | 核心字段 | 14 字段 | 子结构 | 长度 |
+|---|---|---|---|---|---|
+| 200（ep1） | 97.0% | 97.0% | 97.0% | 97.0% | 97.0% |
+| 400（ep2） | 97.5% | 97.0% | 97.0% | 97.0% | 96.5% |
+| 564（ep3） | **98.0%** | **98.0%** | **98.0%** | **98.0%** | **97.5%** |
+
+单调微升、无过拟合迹象；增益集中在 ep1，ep2/ep3 边际约 1pp。最终采用 checkpoint-564。
+
+### 7B 对照实验（Qwen2.5-7B-Instruct + LoRA，同数据同超参）
+
+| 指标 | 微调前 | 微调后 |
+|---|---|---|
+| JSON 可解析率 | 99.50% | **99.00%** |
+| 核心字段完整率 | 99.50% | **99.00%** |
+| 14 字段完整率 | 99.50% | **99.00%** |
+| 关键子结构合规率 | 0.00% | **99.00%** |
+| 长度合规率 | 43.00% | **99.00%** |
+
+7B 基座的失败模式与 1.5B 完全不同：不包围栏，但嵌套子结构全错、长度失控——深层 schema 约束靠 prompt 给不了，只能靠 SFT。微调后 7B 仅领先 1.5B 约 1pp，考虑本地部署体积（15G vs 3G）与推理速度，**选型 1.5B**。
+
+### 产物
+
+| 产物 | 位置 |
+|---|---|
+| 1.5B LoRA 权重（选用） | [huggingface.co/TokaiTieo/qwen2-1.5b-npc-lora](https://huggingface.co/TokaiTieo/qwen2-1.5b-npc-lora) |
+| 7B LoRA 权重（对照） | [huggingface.co/TokaiTieo/qwen2.5-7b-npc-lora](https://huggingface.co/TokaiTieo/qwen2.5-7b-npc-lora) |
+| 1.5B 评测明细 + loss 曲线 | 分支 [`q2-1.5b`](https://github.com/TokaiTieo/PEFT-test-for-my-touhou/tree/q2-1.5b) 的 `eval/results/` |
+| 7B 评测明细 + loss 曲线 | 分支 [`q2.5-7b`](https://github.com/TokaiTieo/PEFT-test-for-my-touhou/tree/q2.5-7b) 的 `eval/results/` |
+
 ## 目前做到哪了
 
 仓库现在已经具备第一轮基线训练所需的数据和评测流程，但还没有可直接发布的成品模型。
@@ -22,7 +69,7 @@
 | 手写 LoRA 训练 | 已实现，只对模型答案计算 loss |
 | LLaMA-Factory 配置 | 已提供正式训练和 smoke test 配置 |
 | 独立评测集 | 200 条，使用与训练集互斥的玩家动作模板 |
-| 训练后权重 | 尚未发布 |
+| 训练后权重 | 已发布：[1.5B](https://huggingface.co/TokaiTieo/qwen2-1.5b-npc-lora)（选用）与 [7B](https://huggingface.co/TokaiTieo/qwen2.5-7b-npc-lora)（对照） |
 
 也就是说：现在可以开始第一轮基线训练，并用固定评测集比较微调前后的格式遵循能力。其中 1000 条新增数据参考了真实测试存档中的连续对话、长期记忆、开放事件、符卡与关系状态；这些内容经过匿名化和去重，但仍不等同于 3000 条人工精写对白。
 
