@@ -58,6 +58,14 @@
 
 质量维度 7B 也领先约 0.25-0.35 分，与格式合规的差距（1pp）同向但同样有限，不改选型结论。
 
+### 训练曲线
+
+![1.5B train loss](https://raw.githubusercontent.com/TokaiTieo/PEFT-test-for-my-touhou/q2-1.5b/eval/results/training/training_loss.png)
+
+![1.5B eval loss](https://raw.githubusercontent.com/TokaiTieo/PEFT-test-for-my-touhou/q2-1.5b/eval/results/training/training_eval_loss.png)
+
+train/eval 缓降无分叉（eval_loss：ep1 0.0554 → 终 0.0446）。7B 曲线在 `q2.5-7b` 分支同名目录。
+
 ### 产物
 
 | 产物 | 位置 |
@@ -69,7 +77,7 @@
 
 ## 目前做到哪了
 
-仓库现在已经具备第一轮基线训练所需的数据和评测流程，但还没有可直接发布的成品模型。
+仓库已经完成第一轮基线训练与评测，成品模型已发布 HuggingFace（见上）。
 
 | 项目 | 当前状态 |
 |---|---|
@@ -79,9 +87,10 @@
 | 手写 LoRA 训练 | 已实现，只对模型答案计算 loss |
 | LLaMA-Factory 配置 | 已提供正式训练和 smoke test 配置 |
 | 独立评测集 | 200 条，使用与训练集互斥的玩家动作模板 |
+| 第一轮训练与评测 | 已完成：1.5B/7B 双尺寸消融 + judge 打分，1.5B 选型交付 |
 | 训练后权重 | 已发布：[1.5B](https://huggingface.co/TokaiTieo/qwen2-1.5b-npc-lora)（选用）与 [7B](https://huggingface.co/TokaiTieo/qwen2.5-7b-npc-lora)（对照） |
 
-也就是说：现在可以开始第一轮基线训练，并用固定评测集比较微调前后的格式遵循能力。其中 1000 条新增数据参考了真实测试存档中的连续对话、长期记忆、开放事件、符卡与关系状态；这些内容经过匿名化和去重，但仍不等同于 3000 条人工精写对白。
+也就是说：数据、训练、评测、归档全链路已闭环并可直接复现。其中 1000 条新增数据参考了真实测试存档中的连续对话、长期记忆、开放事件、符卡与关系状态；这些内容经过匿名化和去重，但仍不等同于 3000 条人工精写对白。
 
 ## 先跑一次数据检查
 
@@ -343,7 +352,20 @@ $env:DEEPSEEK_API_KEY = "sk-xxx"
 python eval/eval.py --adapter saves/qwen2-1.5b-npc-hf
 ```
 
-结果会写入 `eval/results/compare.md` 和 `eval/results/generations.json`。
+结果会写入 `eval/results/compare.md` 和 `eval/results/generations.json`（生成完先落盘再做 judge，judge 失败不丢生成结果）。
+
+生成结果已归档、只想补 judge 时，用 `eval/judge_only.py`（不重跑生成）：
+
+```bash
+export DEEPSEEK_API_KEY=sk-xxx
+python eval/judge_only.py eval/results/generations.json
+```
+
+分析基座输出的围栏失败模式用 `eval/fence_check.py`：
+
+```bash
+python eval/fence_check.py eval/results/generations.json
+```
 
 ## 接入《东方异变录》
 
@@ -360,7 +382,11 @@ DEEPSEEK_API_KEY=local
 ## 仓库结构
 
 ```text
-├── configs/                    # LLaMA-Factory 训练配置
+├── configs/
+│   ├── train_npc_qlora.yaml       # 1.5B 正式训练配置
+│   ├── train_npc_qlora_7b.yaml    # 7B 对照实验配置
+│   ├── train_npc_qlora_smoke.yaml # smoke test 配置
+│   └── dataset_info.snippet.json  # LLaMA-Factory 数据集注册片段
 ├── data/
 │   ├── npc_dialogue.json       # 3000 条正式训练集
 │   ├── npc_eval.json           # 200 条独立评测集
@@ -368,7 +394,9 @@ DEEPSEEK_API_KEY=local
 │   ├── dataset_manifest.json   # 场景配额、覆盖数和隔离结果
 │   └── quality_check.py        # 数据契约质检
 ├── eval/
-│   ├── eval.py                 # 微调前后对比
+│   ├── eval.py                 # 微调前后对比（生成 + 自动指标 + judge）
+│   ├── judge_only.py           # 对已归档生成结果补 judge，不重跑生成
+│   ├── fence_check.py          # 围栏剥离统计（区分失败模式）
 │   └── results/                # 评测输出
 ├── infer.py                    # 单条推理与 JSON 检查
 ├── scripts/
@@ -380,9 +408,10 @@ DEEPSEEK_API_KEY=local
 
 ## 接下来要做的事
 
-- 跑完第一轮基座/微调对比，记录 JSON 合规率和各类场景失分；
+- ~~跑完第一轮基座/微调对比，记录 JSON 合规率和各类场景失分~~（已完成，见上方结果区）
+- 人工抽读 30 条微调后输出，检查人设串味（当前唯一挂着的人工验收项）
 - 为口吻趋同或失分明显的角色补充人工精写样本；
 - 增加近似语义去重和按角色留出的泛化评测，而不只检查完全重复；
-- 统计真实 prompt 的 token 分布，再决定正式训练使用 4096 还是更长上下文；
-- 完成基座与微调模型对比后，再决定是否需要 DPO。
+- 统计真实 prompt 的 token 分布，再决定下一轮训练使用 4096 还是更长上下文；
+- 根据人工抽读和 judge 分维度失分情况，决定是否需要 DPO。
 
