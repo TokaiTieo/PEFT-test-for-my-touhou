@@ -85,9 +85,16 @@ class CuratedDatasetTests(unittest.TestCase):
             source = (ROOT / filename).read_text(encoding="utf-8")
             ast.parse(source)
             self.assertIn("npc_eval_reviewed.json", source)
-        self.assertIn("if args.paid_judge:", (ROOT / "eval/eval.py").read_text(encoding="utf-8"))
-        for filename in ("train_npc_qlora.yaml", "train_npc_qlora_smoke.yaml"):
-            self.assertIn("dataset: npc_dialogue_reviewed", (ROOT / "configs" / filename).read_text(encoding="utf-8"))
+        evaluation = (ROOT / "eval/eval.py").read_text(encoding="utf-8")
+        self.assertIn("if args.paid_judge:", evaluation)
+        self.assertNotIn("if not args.skip_judge:", evaluation)
+        self.assertLess(evaluation.index("    save(rows)"), evaluation.index("    if args.paid_judge:"))
+        self.assertIn('raw["input_ids"] if hasattr(raw, "keys") else raw', evaluation)
+        for filename in ("train_npc_qlora.yaml", "train_npc_qlora_smoke.yaml", "train_npc_qlora_7b.yaml"):
+            config = (ROOT / "configs" / filename).read_text(encoding="utf-8")
+            self.assertIn("dataset: npc_dialogue_reviewed", config)
+            if filename != "train_npc_qlora_smoke.yaml":
+                self.assertIn("eval_dataset: npc_eval_reviewed", config)
 
     def test_aliases_are_included_in_similarity_audit(self):
         records = [dict(id="train/alias/a", split="train", npc="alias", case="a",

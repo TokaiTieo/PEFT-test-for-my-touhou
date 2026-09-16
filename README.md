@@ -10,9 +10,78 @@
 - NPC 的语气、人设和世界观尽量稳定；
 - 关系、记忆、开放事件和符卡结果能够按游戏契约落盘。
 
+## 旧版数据的训练结果（历史记录）
+
+以下数字、曲线和权重链接保留自远端已有实验记录，本轮未重新运行或独立复核。它们对应重写前的数据，**不是本次 1000/200 条重写数据的效果**。新版还需要重新训练和评测；旧版格式分数也不能证明人设或语言质量合格。
+
+第一轮基线已完成：AutoDL RTX 3090 24G，LLaMA-Factory，LoRA r16/alpha32，bf16，cutoff 4096，等效 batch 16，3 epochs（564 步）。1.5B 训练 43 分钟，7B 约 2 小时。
+
+### 主结果：Qwen2-1.5B-Instruct + LoRA（checkpoint-564）
+
+| 指标 | 微调前 | 微调后 |
+|---|---|---|
+| JSON 可解析率 | 4.50% | **98.00%** |
+| 核心字段完整率 | 1.50% | **98.00%** |
+| 14 字段完整率 | 0.50% | **98.00%** |
+| 关键子结构合规率 | 0.00% | **98.00%** |
+| 长度合规率 | 0.00% | **97.50%** |
+
+旧版记录中，基座给 JSON 包 Markdown 围栏是主要失败模式，去掉围栏后可解析率为 85.5%。裸 JSON 解析率是更严格的训练指标，但当前游戏后端也有围栏清理逻辑，应与后端可恢复率分开报告。围栏统计见 [`eval/fence_check.py`](eval/fence_check.py)。
+
+### epoch 消融（旧版 200 条评测集，微调后）
+
+| checkpoint | 可解析 | 核心字段 | 14 字段 | 子结构 | 长度 |
+|---|---|---|---|---|---|
+| 200（ep1） | 97.0% | 97.0% | 97.0% | 97.0% | 97.0% |
+| 400（ep2） | 97.5% | 97.0% | 97.0% | 97.0% | 96.5% |
+| 564（ep3） | **98.0%** | **98.0%** | **98.0%** | **98.0%** | **97.5%** |
+
+旧版格式指标小幅上升，增益集中在 ep1，ep2/ep3 边际约 1pp；当时采用 checkpoint-564。这些格式指标不足以排除过拟合或数据模板化问题。
+
+### 7B 对照实验（Qwen2.5-7B-Instruct + LoRA，同数据同超参）
+
+| 指标 | 微调前 | 微调后 |
+|---|---|---|
+| JSON 可解析率 | 99.50% | **99.00%** |
+| 核心字段完整率 | 99.50% | **99.00%** |
+| 14 字段完整率 | 99.50% | **99.00%** |
+| 关键子结构合规率 | 0.00% | **99.00%** |
+| 长度合规率 | 43.00% | **99.00%** |
+
+旧版记录显示 7B 的嵌套结构与长度指标在微调后改善，但不能据此断言 prompt 无法改善这些问题。当时结合格式指标、部署体积和推理成本选择 1.5B；新版数据的选型仍需复测。
+
+### DeepSeek judge（三维 1-5 分，200 条，deepseek-chat）
+
+| 维度 | 1.5B 微调前 → 后 | 7B 微调前 → 后 |
+|---|---|---|
+| 人设一致性 | 2.85 → **4.04** | 3.98 → **4.29** |
+| 剧情连贯性 | 2.26 → **3.63** | 3.48 → **3.88** |
+| 回复质量 | 1.88 → **3.52** | 3.26 → **3.87** |
+
+质量维度 7B 也领先约 0.25-0.35 分，与格式合规的差距（1pp）同向但同样有限，不改选型结论。
+
+### 训练曲线
+
+![1.5B train loss](https://raw.githubusercontent.com/TokaiTieo/PEFT-test-for-my-touhou/q2-1.5b/eval/results/training/training_loss.png)
+
+![1.5B eval loss](https://raw.githubusercontent.com/TokaiTieo/PEFT-test-for-my-touhou/q2-1.5b/eval/results/training/training_eval_loss.png)
+
+train/eval 缓降无分叉（eval_loss：ep1 0.0554 → 终 0.0446）。7B 曲线在 `q2.5-7b` 分支同名目录。
+
+### 产物
+
+| 产物 | 位置 |
+|---|---|
+| 1.5B LoRA 权重（选用） | [huggingface.co/TokaiTieo/qwen2-1.5b-npc-lora](https://huggingface.co/TokaiTieo/qwen2-1.5b-npc-lora) |
+| 7B LoRA 权重（对照） | [huggingface.co/TokaiTieo/qwen2.5-7b-npc-lora](https://huggingface.co/TokaiTieo/qwen2.5-7b-npc-lora) |
+| 1.5B 评测明细 + loss 曲线 | 分支 [`q2-1.5b`](https://github.com/TokaiTieo/PEFT-test-for-my-touhou/tree/q2-1.5b) 的 `eval/results/` |
+| 7B 评测明细 + loss 曲线 | 分支 [`q2.5-7b`](https://github.com/TokaiTieo/PEFT-test-for-my-touhou/tree/q2.5-7b) 的 `eval/results/` |
+
 ## 目前做到哪了
 
 目前正在重写训练数据，**还不能把原有 3000 条当成高质量正式训练集**。旧数据主要由模板程序拼装：即使句子不完全相同，也可能只是换名字、物品或措辞。之前仅凭条数和 JSON 合规就建议开始正式训练，不够严谨。
+
+此前已完成旧版基线训练并发布权重，记录保留在上方；本轮交付的是新版数据，不是新的模型权重。
 
 | 项目 | 当前状态 |
 |---|---|
@@ -23,7 +92,7 @@
 | 手写 LoRA 训练 | 已实现，只对模型答案计算 loss |
 | 训练配置 | 默认只接入 1000 条已重写子集，供试训，不混入待改旧数据 |
 | 评测集 | 全部 200 条已重写并接入默认评测入口 |
-| 训练后权重 | 尚未发布 |
+| 训练后权重 | 旧版已发布（见上）；本次重写数据尚未训练或发布新权重 |
 
 累计重写 1000 条训练、200 条评测，分别覆盖 49、97 个项目 NPC 名称（包含别名，不等于独立角色数）。每条场景、玩家输入和完整回答直接撰写，不调用付费模型 API，不使用台词模板扩充数量。脚本只负责填充 JSON 的空字段、组装数据和校验，不负责创作对白。
 
@@ -285,7 +354,26 @@ python eval/eval.py --adapter saves/qwen2-1.5b-npc-hf --skip-judge
 
 默认不调用付费 API，即使环境中有 Key 也不会自动调用。旧的付费 judge 功能只有主动传入 `--paid-judge` 才启用，本轮重写及校验没有使用它。自动格式指标不能替代人设审阅或游戏内实测。
 
-结果会写入 `eval/results/compare.md` 和 `eval/results/generations.json`。
+结果会写入 `eval/results/compare.md` 和 `eval/results/generations.json`（生成完先落盘再做 judge，judge 失败不丢生成结果）。
+
+生成结果已归档、只想补 judge 时，可显式运行 `eval/judge_only.py`（不重跑生成，但会发送样本并产生 API 费用；本轮没有运行）：
+
+```bash
+export DEEPSEEK_API_KEY=sk-xxx
+python eval/judge_only.py eval/results/generations.json
+```
+
+分析基座输出的围栏失败模式用 `eval/fence_check.py`：
+
+```bash
+python eval/fence_check.py eval/results/generations.json
+```
+
+生成人工抽读包（抽 30 条微调后输出供人读，带串味/破墙预筛标记）用 `eval/make_review_pack.py`：
+
+```bash
+python eval/make_review_pack.py eval/results/generations.json --npc-index /path/to/npc_index.json
+```
 
 ## 接入《东方异变录》
 
@@ -302,7 +390,11 @@ DEEPSEEK_API_KEY=local
 ## 仓库结构
 
 ```text
-├── configs/                    # LLaMA-Factory 训练配置
+├── configs/
+│   ├── train_npc_qlora.yaml       # 1.5B 重写子集试训配置
+│   ├── train_npc_qlora_7b.yaml    # 7B 重写子集试训配置
+│   ├── train_npc_qlora_smoke.yaml # smoke test 配置
+│   └── dataset_info.snippet.json  # LLaMA-Factory 数据集注册片段
 ├── data/
 │   ├── npc_dialogue.json       # 3000 条，新旧混合，迁移中
 │   ├── npc_eval.json           # 200 条，已全部重写
@@ -315,7 +407,9 @@ DEEPSEEK_API_KEY=local
 │   ├── dataset_manifest.json   # 旧模板数据的历史配额
 │   └── quality_check.py        # 数据契约质检
 ├── eval/
-│   ├── eval.py                 # 微调前后对比
+│   ├── eval.py                 # 微调前后对比（生成 + 自动指标 + judge）
+│   ├── judge_only.py           # 对已归档生成结果补 judge，不重跑生成
+│   ├── fence_check.py          # 围栏剥离统计（区分失败模式）
 │   └── results/                # 评测输出
 ├── infer.py                    # 单条推理与 JSON 检查
 ├── scripts/
@@ -332,7 +426,8 @@ DEEPSEEK_API_KEY=local
 - 请用户确认“天独铭 / 天肱”的项目 ID 身份映射；
 - 请用户审阅这批对白，检查是否仍有过于相似的节奏、说教口气或缺乏人物特征的回答；
 - 增补多轮冲突、正反状态变化、交易等覆盖；再做实际基座/微调对比；
+- 保留旧版人工抽读发现：30 条输出中出现中英文混杂、模板套用和同性格共用模板；新一轮也应抽读模型真实输出，而不是只看格式分数；
 - 增加近似语义去重和按角色留出的泛化评测，而不只检查完全重复；
-- 统计真实 prompt 的 token 分布，再决定正式训练使用 4096 还是更长上下文；
-- 完成基座与微调模型对比后，再决定是否需要 DPO。
+- 统计真实 prompt 的 token 分布，再决定下一轮训练使用 4096 还是更长上下文；
+- 根据人工抽读和 judge 分维度失分情况，决定是否需要 DPO。
 
