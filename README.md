@@ -12,39 +12,46 @@
 
 ## 目前做到哪了
 
-仓库现在已经具备第一轮基线训练所需的数据和评测流程，但还没有可直接发布的成品模型。
+目前正在重写训练数据，**还不能把原有 3000 条当成高质量正式训练集**。旧数据主要由模板程序拼装：即使句子不完全相同，也可能只是换名字、物品或措辞。之前仅凭条数和 JSON 合规就建议开始正式训练，不够严谨。
 
 | 项目 | 当前状态 |
 |---|---|
-| 后端 JSON 契约 | 已对照 `touhou` 后端代码核实 |
-| 训练数据 | 3000 条：基础分层 2000 条 + 测试存档驱动 1000 条 |
-| 数据质检 | 可检查 14 个顶层字段、状态更新子结构和跨集合泄漏 |
+| 后端 JSON 契约 | 保留原有 14 字段训练格式；当前对话契约实际忽略 `is_dead`、`new_location` |
+| 训练数据 | 3000 个位置中已逐条重写 208 条，其余 2792 条待改 |
+| 人设依据 | 已核对 10 名角色的 THBWiki 一设资料及标注的官方出处，记录页面修订号 |
+| 数据质检 | JSON/子结构、重复对白、跨集合文本重叠、重建一致性；不等同于人工验收 |
 | 手写 LoRA 训练 | 已实现，只对模型答案计算 loss |
-| LLaMA-Factory 配置 | 已提供正式训练和 smoke test 配置 |
-| 独立评测集 | 200 条，使用与训练集互斥的玩家动作模板 |
+| 训练配置 | 默认只接入 208 条已重写子集，供试训，不混入待改旧数据 |
+| 评测集 | 200 个位置中已重写 20 条，其余 180 条待改；当前只用这 20 条小样本检查 |
 | 训练后权重 | 尚未发布 |
 
-也就是说：现在可以开始第一轮基线训练，并用固定评测集比较微调前后的格式遵循能力。其中 1000 条新增数据参考了真实测试存档中的连续对话、长期记忆、开放事件、符卡与关系状态；这些内容经过匿名化和去重，但仍不等同于 3000 条人工精写对白。
+这批覆盖咲夜、琪露诺、妖梦、觉、恋、永琳、辉夜、妹红、蕾米莉亚、芙兰朵露。每条场景、玩家输入和完整回答直接撰写，不调用付费模型 API，不使用台词模板扩充数量。脚本只负责填充 JSON 的空字段、组装数据和校验，不负责创作对白。
+
+`reviewed` 表示助手对照来源重写并检查过，**不是用户已验收，也不是官方对白**。具体剧情是为游戏新写的虚构情境；THBWiki 的二创梗不作为官方事实，《求闻史纪》等书中角色的推测也不直接当成真相。
+
+逐条进度、原样本指纹和来源见 [`data/canon_review_manifest.json`](data/canon_review_manifest.json)。尚未写入该清单的索引均为待重写；[`data/dataset_manifest.json`](data/dataset_manifest.json) 仅保留旧版模板数据的历史配额，不再代表当前质量状态。
 
 ## 先跑一次数据检查
 
 ```bash
 git clone https://github.com/TokaiTieo/PEFT-test-for-my-touhou.git
 cd PEFT-test-for-my-touhou
-python data/quality_check.py data/npc_dialogue.json data/npc_eval.json
+python scripts/build_curated_dataset.py
+python data/quality_check.py data/npc_dialogue_reviewed.json data/npc_eval_reviewed.json
 ```
 
 正常情况下会看到：
 
 ```text
-data/npc_dialogue.json: 共检查 3000 条样本
-description 唯一文本 3000/3000
+data/npc_dialogue_reviewed.json: 共检查 208 条样本
+description 唯一文本 208/208
 全部通过 ✓
-data/npc_eval.json: 共检查 200 条样本
-description 唯一文本 200/200
+data/npc_eval_reviewed.json: 共检查 20 条样本
+description 唯一文本 20/20
 全部通过 ✓
-npc_dialogue.json ↔ npc_eval.json: exact prompt 重叠 0
-npc_dialogue.json ↔ npc_eval.json: exact output 重叠 0
+npc_dialogue_reviewed.json ↔ npc_eval_reviewed.json: exact prompt 重叠 0
+npc_dialogue_reviewed.json ↔ npc_eval_reviewed.json: exact output 重叠 0
+npc_dialogue_reviewed.json ↔ npc_eval_reviewed.json: exact description 重叠 0
 ```
 
 质检脚本会检查：
@@ -55,36 +62,36 @@ npc_dialogue.json ↔ npc_eval.json: exact output 重叠 0
 - `memory_updates`、`open_event`、`spellcard_result` 是否符合后端结构；
 - instruction 是否包含 NPC 信息和玩家输入；
 - 是否存在完全重复的 output；
-- 训练集和评测集之间是否有完全相同的 prompt 或 output。
+- 训练集和评测集之间是否有完全相同的 prompt、output 或 description。
+
+完整混合文件目前仍有 44 条跨训练/评测相同对白，完整检查会失败；这些仍属待重写内容，不应关闭检查来凑“全部通过”。字符相似度也只用于找疑似近重复，不能证明语义隔离或人物塑造质量。检查结果与局限见 [`data/CANON_REWRITE.md`](data/CANON_REWRITE.md)。
 
 ## 数据集是怎么来的
 
-[`scripts/generate_dataset.py`](scripts/generate_dataset.py) 会读取同级 `touhou` 仓库中的真实 NPC 档案、地点表，以及已经匿名化的 [`data/saveback_anchors.json`](data/saveback_anchors.json)，用固定种子生成可复现的数据。它不联网，也不调用付费模型 API。
+旧版 [`scripts/generate_dataset.py`](scripts/generate_dataset.py) 读取 NPC 档案和存档锚点拼装模板，现已停用直接执行，避免覆盖重写成果。源码留作审计，不再把它的产出叫作精写数据。
 
-基础训练集按以下场景分层：日常 320、赠礼 180、协助 160、约定 160、秘密 120、开放事件 180、符卡 300、任务 180、交易 140、威胁退出 160、传闻 100，共 2000 条。
+新的内容源在 [`data/curated/`](data/curated/)。每行分别是集合、NPC、案例名、场景、玩家输入、完整回答和明确的状态变化。没有替换词库，也没有循环拼接对白；固定 JSON 空字段不是台词模板。
 
-另外 1000 条来自 `touhousaveback` 的测试结果：真实对白续接 250、长期记忆召回 200、开放事件续查 150、符卡复盘 100、关系连续性 150、多状态混合 150。派生锚点包括 43 段连续对话、97 条长期记忆、14 个开放事件、5 次符卡记录和 13 个关系状态，所有玩家姓名、角色 UUID、高权限 prompt 与时间戳均已移除。评测集仍保持独立的 200 条，不吸收这些存档锚点。完整配额见 [`data/dataset_manifest.json`](data/dataset_manifest.json)。
+[`data/canon_profiles.json`](data/canon_profiles.json) 分开记录官方事实摘要、创作语气建议和需避免的二创刻板印象。页面版本与出处在审校清单中；整页 Wiki 抓取内容只放忽略提交的 `.cache/canon/`，不复制进训练答案。
 
-如果 `PEFT-test-for-my-touhou` 与 `touhou` 是同级目录，直接运行：
+编辑完成后组装并检查：
 
 ```bash
-python scripts/generate_dataset.py
-python data/quality_check.py data/npc_dialogue.json data/npc_eval.json
+python scripts/build_curated_dataset.py --write
+python scripts/build_curated_dataset.py
+python data/quality_check.py data/npc_dialogue_reviewed.json data/npc_eval_reviewed.json
+python -m unittest discover -s tests -v
 ```
 
-如果需要从本地测试存档重新提取锚点，先运行：
+新样本只替换对应角色原有位置，其余内容保留。组装器会校验数量、原文件是否被单独修改、输出结构和近重复；默认无 `--write` 时只读检查。增加新角色前需先核查该角色官方来源，不要把未知名字或项目自设强行认定为官方角色。
+
+旧存档锚点 [`data/saveback_anchors.json`](data/saveback_anchors.json) 仍保留供后续逐条改写参考。需要重新提取时运行：
 
 ```bash
 python scripts/extract_saveback_anchors.py --save-root /path/to/touhousaveback
 ```
 
-否则显式指定游戏仓库：
-
-```bash
-python scripts/generate_dataset.py --touhou-root /path/to/touhou
-```
-
-固定随机种子为 `20260826`。同一份源档案、锚点和生成器会得到相同数据，适合审查、复现和后续迭代。
+复盘旧战斗不等于新结算，重提旧约定不等于新记忆。只有本回合真正发生的变化才写入对应字段，这是重写中一并修正的原则。
 
 ## 一条训练数据长什么样
 
@@ -103,7 +110,7 @@ python scripts/generate_dataset.py --touhou-root /path/to/touhou
 1. 游戏运行时会把完整 prompt 作为一条 `user` 消息发送，不会另外拆出 `system` 消息。训练和推理脚本也必须保持这个格式。
 2. `output` 本身是一个 JSON 字符串，所以文件中会看到转义后的双引号。解析外层 JSON 后，output 还要能再次解析成对象。
 
-完整训练集在 [`data/npc_dialogue.json`](data/npc_dialogue.json)，独立评测集在 [`data/npc_eval.json`](data/npc_eval.json)。
+原规模文件 [`data/npc_dialogue.json`](data/npc_dialogue.json) 和 [`data/npc_eval.json`](data/npc_eval.json) 处于新旧混合迁移阶段。试训请用 `npc_dialogue_reviewed.json` 和 `npc_eval_reviewed.json`，不要把混合文件直接用于正式训练。
 
 ## 游戏真正需要的三个子结构
 
@@ -175,7 +182,7 @@ python scripts/generate_dataset.py --touhou-root /path/to/touhou
 
 ## 训练方式一：LLaMA-Factory
 
-这是正式训练推荐使用的方式。
+可用来试训当前已重写子集；完整数据重写和用户验收尚未完成。
 
 ```bash
 git clone --depth 1 https://github.com/hiyouga/LLaMA-Factory.git
@@ -185,11 +192,11 @@ pip install -e ".[torch,metrics]"
 
 然后：
 
-1. 把本仓库的 `data/npc_dialogue.json` 和 `data/npc_eval.json` 复制到 LLaMA-Factory 的 `data/`；
+1. 把本仓库的 `data/npc_dialogue_reviewed.json` 和 `data/npc_eval_reviewed.json` 复制到 LLaMA-Factory 的 `data/`；
 2. 把 `configs/dataset_info.snippet.json` 中的条目合并进 LLaMA-Factory 的 `data/dataset_info.json`；
 3. 使用本仓库中的 YAML 启动训练。
 
-正式训练：
+子集试训：
 
 ```bash
 llamafactory-cli train /path/to/PEFT-test-for-my-touhou/configs/train_npc_qlora.yaml
@@ -203,7 +210,7 @@ llamafactory-cli train /path/to/PEFT-test-for-my-touhou/configs/train_npc_qlora_
 
 两份 YAML 的名字保留了早期的 `qlora` 命名，但目前没有打开 4bit 量化，实际运行的是普通 LoRA。只有取消 `quantization_bit: 4` 的注释或显式加入该配置后，才是 QLoRA。
 
-正式配置使用 4096 tokens；smoke 配置使用 1024 tokens，只用来确认环境、数据和训练流程能否正常工作。
+试训配置使用 4096 tokens；smoke 配置使用 1024 tokens。后者可能截断样本，只用于环境检查，不能用于质量结论。两份配置现在都不读取未重写数据。
 
 ## 训练方式二：Transformers + PEFT
 
@@ -258,7 +265,7 @@ python infer.py --base-only
 
 ## 评测
 
-仓库已经提供完全不进入训练集的 200 条 `data/npc_eval.json`。训练完成后运行：
+默认使用不进入训练的 20 条 `data/npc_eval_reviewed.json`。题目同时包含应该更新和不应该更新状态的情况，但样本太少，不能外推全角色质量。训练完成后运行：
 
 ```bash
 python eval/eval.py --adapter saves/qwen2-1.5b-npc-hf --skip-judge
@@ -272,19 +279,7 @@ python eval/eval.py --adapter saves/qwen2-1.5b-npc-hf --skip-judge
 - 三个关键子结构合规率；
 - description 长度合规率。
 
-如果设置了 DeepSeek API Key，还可以增加人设、连贯性和回复质量评分：
-
-```bash
-export DEEPSEEK_API_KEY=sk-xxx
-python eval/eval.py --adapter saves/qwen2-1.5b-npc-hf
-```
-
-PowerShell 使用：
-
-```powershell
-$env:DEEPSEEK_API_KEY = "sk-xxx"
-python eval/eval.py --adapter saves/qwen2-1.5b-npc-hf
-```
+默认不调用付费 API，即使环境中有 Key 也不会自动调用。旧的付费 judge 功能只有主动传入 `--paid-judge` 才启用，本轮重写及校验没有使用它。自动格式指标不能替代人设审阅或游戏内实测。
 
 结果会写入 `eval/results/compare.md` 和 `eval/results/generations.json`。
 
@@ -305,10 +300,15 @@ DEEPSEEK_API_KEY=local
 ```text
 ├── configs/                    # LLaMA-Factory 训练配置
 ├── data/
-│   ├── npc_dialogue.json       # 3000 条正式训练集
-│   ├── npc_eval.json           # 200 条独立评测集
+│   ├── npc_dialogue.json       # 3000 条，新旧混合，迁移中
+│   ├── npc_eval.json           # 200 条，新旧混合，迁移中
+│   ├── npc_dialogue_reviewed.json # 208 条直接重写的试训子集
+│   ├── npc_eval_reviewed.json  # 20 条直接重写的评测子集
+│   ├── curated/               # 逐条撰写原稿，不由模板生成
+│   ├── canon_profiles.json    # 官方事实摘要与创作约束
+│   ├── canon_review_manifest.json # 来源、进度、逐条指纹和诊断
 │   ├── saveback_anchors.json   # 测试存档的匿名化剧情锚点
-│   ├── dataset_manifest.json   # 场景配额、覆盖数和隔离结果
+│   ├── dataset_manifest.json   # 旧模板数据的历史配额
 │   └── quality_check.py        # 数据契约质检
 ├── eval/
 │   ├── eval.py                 # 微调前后对比
@@ -316,15 +316,17 @@ DEEPSEEK_API_KEY=local
 ├── infer.py                    # 单条推理与 JSON 检查
 ├── scripts/
 │   ├── extract_saveback_anchors.py # 从测试存档提取匿名化锚点
-│   └── generate_dataset.py     # 从真实游戏档案和锚点重建数据集
+│   ├── build_curated_dataset.py # 只组装/验证直接撰写内容
+│   └── generate_dataset.py     # 已停用入口，仅保留审计记录
 ├── train_sft.py                # Transformers + PEFT 训练脚本
 └── requirements.txt
 ```
 
 ## 接下来要做的事
 
-- 跑完第一轮基座/微调对比，记录 JSON 合规率和各类场景失分；
-- 为口吻趋同或失分明显的角色补充人工精写样本；
+- 继续逐批重写剩余 2792 条训练和 180 条评测记录，核实角色别名和来源；
+- 请用户审阅这批对白，检查是否仍有过于相似的节奏、说教口气或缺乏人物特征的回答；
+- 增补多轮冲突、正反状态变化、交易等覆盖；再做实际基座/微调对比；
 - 增加近似语义去重和按角色留出的泛化评测，而不只检查完全重复；
 - 统计真实 prompt 的 token 分布，再决定正式训练使用 4096 还是更长上下文；
 - 完成基座与微调模型对比后，再决定是否需要 DPO。

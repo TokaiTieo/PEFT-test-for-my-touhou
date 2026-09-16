@@ -1,20 +1,20 @@
 """评测脚本：微调前 vs 微调后（《东方异变录》契约版）。
 
 流程：
-1. data/npc_eval.json 200 条，基座模型和微调后模型各生成一遍
+1. data/npc_eval_reviewed.json 已重写子集，基座模型和微调后模型各生成一遍
 2. 自动指标（不调 API）：
    - JSON 可解析率
    - 核心字段完整率（description / is_dead）
    - 14 字段完整率与三个关键子结构合规率
    - description 长度合规率（50-200 字）
-3. DeepSeek API 做 judge，三维 1-5 分：人设一致性 / 剧情连贯性 / 回复质量
+3. 默认不调用 API；只有显式 --paid-judge 才启用付费 DeepSeek judge
+   三维 1-5 分：人设一致性 / 剧情连贯性 / 回复质量
    （judge 对象为 description 字段）
 4. 输出对比表 → eval/results/compare.md（README 主图素材）
 
 用法：
-    export DEEPSEEK_API_KEY=sk-xxx
     python eval/eval.py --adapter saves/qwen2-1.5b-npc-hf
-    python eval/eval.py --adapter saves/xxx --skip-judge   # 只跑自动指标
+    python eval/eval.py --adapter saves/xxx --skip-judge   # 兼容旧命令，只跑自动指标
 """
 
 import argparse
@@ -151,13 +151,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="Qwen/Qwen2-1.5B-Instruct")
     ap.add_argument("--adapter", default="saves/qwen2-1.5b-npc-hf")
-    ap.add_argument("--data", default="data/npc_eval.json")
+    ap.add_argument("--data", default="data/npc_eval_reviewed.json")
     ap.add_argument("--out", default="eval/results")
-    ap.add_argument("--skip-judge", action="store_true")
+    judge_options = ap.add_mutually_exclusive_group()
+    judge_options.add_argument("--skip-judge", action="store_true", help="兼容旧命令；默认已不调用 API")
+    judge_options.add_argument("--paid-judge", action="store_true", help="显式启用付费 API，并向服务发送评测样本")
     args = ap.parse_args()
 
     samples = json.load(open(args.data, encoding="utf-8"))
-    assert samples, "npc_eval.json 为空，先合成 200 条测试集（绝不进训练）"
+    assert samples, "评测文件为空；请先编译逐条撰写且不进入训练的评测记录"
     tok = AutoTokenizer.from_pretrained(args.base, trust_remote_code=True)
 
     # 微调前
@@ -177,7 +179,7 @@ def main():
     m_before, m_after = auto_metrics(out_before), auto_metrics(out_after)
     rows = [(k, m_before[k], m_after[k]) for k in m_before]
 
-    if not args.skip_judge:
+    if args.paid_judge:
         j_before, j_after = judge(samples, out_before), judge(samples, out_after)
         rows += [(f"judge-{d}", j_before[d], j_after[d]) for d in DIMS]
 

@@ -550,4 +550,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(
+        "旧模板生成器已停用，以免覆盖逐条重写的对白。\n"
+        "请编辑 data/curated/batch_*.txt，运行 python scripts/build_curated_dataset.py --write。\n"
+        "此文件仅保留为旧数据生成方式的审计记录，不再作为数据生产入口。"
+    )

@@ -214,7 +214,13 @@ def check(samples):
 
 
 def fingerprint(sample, field):
-    value = sample["instruction"] + "\n" + sample.get("input", "") if field == "prompt" else sample["output"]
+    if field == "description":
+        try:
+            value = json.loads(sample["output"]).get("description", "")
+        except (ValueError, AttributeError, KeyError):
+            value = ""
+    else:
+        value = sample["instruction"] + "\n" + sample.get("input", "") if field == "prompt" else sample["output"]
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
@@ -247,6 +253,8 @@ def main():
         print(f"{path}: 共检查 {total} 条样本")
         if descriptions:
             print(f"description 唯一文本 {len(set(descriptions))}/{len(descriptions)}")
+            if len(set(descriptions)) != len(descriptions):
+                errors["存在重复 description；不能用不同状态字段掩盖相同对白"] += 1
         if errors:
             failed = True
             print(f"发现 {sum(errors.values())} 处问题：")
@@ -259,7 +267,7 @@ def main():
     if len(loaded) > 1:
         for i, (left_path, left) in enumerate(loaded):
             for right_path, right in loaded[i + 1:]:
-                for field in ("prompt", "output"):
+                for field in ("prompt", "output", "description"):
                     overlap = {fingerprint(x, field) for x in left} & {fingerprint(x, field) for x in right}
                     print(f"{left_path.name} ↔ {right_path.name}: exact {field} 重叠 {len(overlap)}")
                     failed |= bool(overlap)

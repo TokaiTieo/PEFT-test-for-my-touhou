@@ -16,7 +16,7 @@ lora_dropout: 0.05
 lora_target: all
 
 ### dataset
-dataset: npc_dialogue
+dataset: npc_dialogue_reviewed
 template: qwen
 cutoff_len: 1024                # smoke 只验证流程；截断会导致 JSON 不完整，属预期
 max_samples: 200            # 只取 200 条验证流程

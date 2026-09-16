@@ -19,8 +19,9 @@ from transformers import (
 from peft import LoraConfig, get_peft_model
 
 MODEL = "Qwen/Qwen2-1.5B-Instruct"   # 或本地路径
-DATA = "data/npc_dialogue.json"
-EVAL_DATA = "data/npc_eval.json"
+DATA = "data/npc_dialogue_reviewed.json"
+EVAL_DATA = "data/npc_eval_reviewed.json"
+# 当前仅是直接重写后的试训子集；不要混入尚未审校的旧模板数据。
 OUT = "saves/qwen2-1.5b-npc-hf"
 MAX_LENGTH = int(os.environ.get("NPC_MAX_LENGTH", "4096"))
 

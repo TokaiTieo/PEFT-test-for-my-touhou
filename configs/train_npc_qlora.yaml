@@ -15,8 +15,9 @@ lora_target: all
 
 ### dataset
 # ⚠️ 游戏真实 prompt（prompts/npc_dialogue.txt 填充后）很长，1024 会截断，云端用 4096
-dataset: npc_dialogue
-eval_dataset: npc_eval
+# 人设重写迁移期间只使用已重写子集；不是全量正式训练配置。
+dataset: npc_dialogue_reviewed
+eval_dataset: npc_eval_reviewed
 template: qwen
 cutoff_len: 4096
 overwrite_cache: true

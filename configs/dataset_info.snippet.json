@@ -1,9 +1,9 @@
 {
-  "_comment": "把下面条目合并进 LLaMA-Factory 的 data/dataset_info.json，并复制两个 JSON 数据文件",
-  "npc_dialogue": {
-    "file_name": "npc_dialogue.json"
+  "_comment": "只注册已直接重写的试训子集；将两个 reviewed JSON 复制进 LLaMA-Factory 的 data/。仍需用户审阅，不代表完整训练集已完成。",
+  "npc_dialogue_reviewed": {
+    "file_name": "npc_dialogue_reviewed.json"
   },
-  "npc_eval": {
-    "file_name": "npc_eval.json"
+  "npc_eval_reviewed": {
+    "file_name": "npc_eval_reviewed.json"
   }
 }
