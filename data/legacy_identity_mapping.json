@@ -1,0 +1,9 @@
+{
+  "status": "resolved_for_dataset_by_project_id_inference",
+  "note": "Not official aliases. The project contains separate duplicated/misnamed entries. Keep original dataset NPC labels and slots for compatibility; correct their personas by the romanized project IDs. Do not rename game NPCs, merge saves or assert the old Chinese labels are official names.",
+  "evidence_file": "../touhou/worlds/world_touhou/npcs/npc_index.json",
+  "mappings": [
+    {"legacy_label":"天独铭","project_id":"npc_enoko","canonical_name":"三头慧之子","official_romanized_name":"Mitsugashira Enoko","source_title":"三头慧之子","reason":"Project ID matches the official given name Enoko; the project's independent '独钴妖怪' profile has no verified official basis.","resolution":"ID-based inference; user has not separately confirmed the intended identity."},
+    {"legacy_label":"天肱","project_id":"npc_biten","canonical_name":"孙美天","official_romanized_name":"Son Biten","source_title":"孙美天","reason":"Project ID matches the official given name Biten; the project's independent '天狗·胳膊' profile has no verified official basis.","resolution":"ID-based inference; user has not separately confirmed the intended identity."}
+  ]
+}

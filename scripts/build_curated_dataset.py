@@ -100,7 +100,8 @@ def assemble(record, profile):
             "output": json.dumps(answer, ensure_ascii=False, separators=(",", ":"))}
 
 
-def audit(records, reviewed):
+def audit(records, reviewed, canonical_by_npc=None):
+    canonical_by_npc = canonical_by_npc or {}
     for split, samples in reviewed.items():
         errors, _ = check(samples)
         if errors:
@@ -122,7 +123,7 @@ def audit(records, reviewed):
     cross = (0.0, "", "")
     for index, (left, a) in enumerate(text_pairs):
         for right, b in text_pairs[index + 1:]:
-            if left["npc"] != right["npc"]:
+            if canonical_by_npc.get(left["npc"], left["npc"]) != canonical_by_npc.get(right["npc"], right["npc"]):
                 continue
             ratio = SequenceMatcher(None, a, b, autojunk=False).ratio()
             match = (ratio, left["id"], right["id"])
@@ -138,6 +139,7 @@ def audit(records, reviewed):
         state_counts[split] = dict(Counter(key for s in samples for key, value in json.loads(s["output"]).items()
                                           if key not in {"description", "time_cost"} and value))
     return dict(exact_description_duplicates=0, exact_context_player_duplicates=0,
+                similarity_identity="canonical source title (aliases grouped)",
                 same_npc_max_sequence_similarity=result(largest),
                 same_npc_cross_split_max_sequence_similarity=result(cross),
                 state_positive_counts=state_counts,
@@ -146,8 +148,12 @@ def audit(records, reviewed):
 
 def build():
     records = load_authored()
-    profile_doc = read(ROOT / "data/canon_profiles.json")
-    profiles = {p["name"]: p for p in profile_doc["profiles"]}
+    profiles = {}
+    for path in sorted((ROOT / "data").glob("canon_profiles*.json")):
+        for profile in read(path)["profiles"]:
+            if profile["name"] in profiles:
+                raise ValueError(f"Duplicate NPC profile: {profile['name']}")
+            profiles[profile["name"]] = profile
     previous = read(MANIFEST) if MANIFEST.exists() else {}
     prior_records = {(r["split"], r["index"]): r for r in previous.get("records", [])}
     sources = previous.get("sources", {})
@@ -170,7 +176,7 @@ def build():
         for (group_split, name), authored in groups.items():
             if group_split != split:
                 continue
-            if len(authored) != len(slots[name]):
+            if len(authored) > len(slots[name]):
                 raise ValueError(f"{split}/{name}: {len(authored)} records vs {len(slots[name])} slots")
             for index, record in zip(slots[name], authored):
                 old = prior_records.get((split, index))
@@ -194,12 +200,20 @@ def build():
     old_slots = {(r["split"], r["index"]) for r in previous.get("records", [])}
     if old_slots - {(r["split"], r["index"]) for r in ledger}:
         raise ValueError("Previously authored records removed; reconcile manifest before rebuilding")
-    diagnostics = audit(records, reviewed)
+    diagnostics = audit(records, reviewed, {name: p["source_title"] for name, p in profiles.items()})
+    mapping_path = ROOT / "data/legacy_identity_mapping.json"
+    legacy_mapping = read(mapping_path) if mapping_path.exists() else {"mappings": []}
+    inferred_names = {row["legacy_label"] for row in legacy_mapping["mappings"]}
+    inferred_count = sum(record["npc"] in inferred_names for record in records)
     manifest = dict(schema_version=1, status="partial_rewrite_not_full_training_ready",
                     authoring="Assistant directly wrote complete scenes, prompts and responses; no paid model API; no response templates.",
                     human_review_completed=False, baseline_commit="0542f51c31313664934b18153527497d354f5b72",
-                    scope="10 NPCs; fictional game scenarios, not official dialogue or recovered save transcripts",
+                    scope=f"{len({r['npc'] for r in records})} NPC labels; fictional game scenarios, not official dialogue or recovered save transcripts",
                     contract_note="Legacy 14-field training shape retained; current DialogueTurnResult ignores is_dead/new_location.",
+                    identity_resolution=dict(project_id_inferred_records=inferred_count,
+                        other_source_backed_records=len(records) - inferred_count,
+                        mapping_file="data/legacy_identity_mapping.json",
+                        caveat="Legacy labels are not official aliases; ID-based mappings await user confirmation."),
                     sources=sources, progress=progress, diagnostics=diagnostics, records=ledger)
     outputs[MANIFEST] = manifest
     return outputs, manifest

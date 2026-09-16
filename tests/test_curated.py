@@ -17,7 +17,8 @@ class CuratedDatasetTests(unittest.TestCase):
     def setUpClass(cls):
         cls.outputs, cls.manifest = builder.build()
         cls.records = builder.load_authored()
-        cls.profiles = {p["name"]: p for p in builder.read(ROOT / "data/canon_profiles.json")["profiles"]}
+        cls.profiles = {p["name"]: p for path in (ROOT / "data").glob("canon_profiles*.json")
+                        for p in builder.read(path)["profiles"]}
 
     def test_checked_in_files_rebuild_exactly(self):
         for path, value in self.outputs.items():
@@ -50,13 +51,13 @@ class CuratedDatasetTests(unittest.TestCase):
             self.assertEqual(len(source["sha256"]), 64)
             self.assertNotIn("text", source)
 
-    def test_selected_npcs_are_fully_replaced(self):
+    def test_selected_npc_slots_are_not_overfilled(self):
         for split, filename in builder.FILES.items():
             full = self.outputs[ROOT / "data" / (filename + ".json")]
             full_counts = Counter(builder.npc_name(s) for s in full)
             authored_counts = Counter(r["npc"] for r in self.records if r["split"] == split)
             for name, count in authored_counts.items():
-                self.assertEqual(full_counts[name], count)
+                self.assertGreaterEqual(full_counts[name], count)
 
     def test_eval_has_positive_and_negative_state_cases(self):
         evaluation = [r for r in self.records if r["split"] == "eval"]
@@ -87,6 +88,29 @@ class CuratedDatasetTests(unittest.TestCase):
         self.assertIn("if args.paid_judge:", (ROOT / "eval/eval.py").read_text(encoding="utf-8"))
         for filename in ("train_npc_qlora.yaml", "train_npc_qlora_smoke.yaml"):
             self.assertIn("dataset: npc_dialogue_reviewed", (ROOT / "configs" / filename).read_text(encoding="utf-8"))
+
+    def test_aliases_are_included_in_similarity_audit(self):
+        records = [dict(id="train/alias/a", split="train", npc="alias", case="a",
+                        context="one", player="one", description="abcdefghij", delta={}),
+                   dict(id="eval/canonical/b", split="eval", npc="canonical", case="b",
+                        context="two", player="two", description="abcdefghik", delta={})]
+        with self.assertRaisesRegex(ValueError, "Near-duplicate"):
+            builder.audit(records, {}, {"alias": "same", "canonical": "same"})
+
+    def test_requested_milestone_and_legacy_mapping_are_explicit(self):
+        target = builder.read(ROOT / "data/rewrite_target.json")
+        self.assertEqual(self.manifest["progress"]["train"]["rewritten"], target["requested_total_train"])
+        self.assertFalse(target["paid_api_allowed"])
+        self.assertEqual(self.manifest["progress"]["eval"]["rewritten"], target["requested_total_eval"])
+        self.assertEqual(self.manifest["progress"]["eval"]["pending_by_npc"], {})
+        resolution = self.manifest["identity_resolution"]
+        self.assertEqual(resolution["project_id_inferred_records"], 4)
+        self.assertEqual(resolution["other_source_backed_records"], 1196)
+        self.assertEqual(target["identity_inferred_eval_records"], 4)
+        mapping = builder.read(ROOT / "data/legacy_identity_mapping.json")
+        self.assertEqual({r["legacy_label"] for r in mapping["mappings"]}, {"天独铭", "天肱"})
+        for row in mapping["mappings"]:
+            self.assertEqual(self.profiles[row["legacy_label"]]["source_title"], row["source_title"])
 
 
 if __name__ == "__main__":

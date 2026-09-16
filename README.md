@@ -17,15 +17,17 @@
 | 项目 | 当前状态 |
 |---|---|
 | 后端 JSON 契约 | 保留原有 14 字段训练格式；当前对话契约实际忽略 `is_dead`、`new_location` |
-| 训练数据 | 3000 个位置中已逐条重写 208 条，其余 2792 条待改 |
-| 人设依据 | 已核对 10 名角色的 THBWiki 一设资料及标注的官方出处，记录页面修订号 |
+| 训练数据 | 3000 个位置中已逐条重写 1000 条，其余 2000 条保留但不进入默认训练 |
+| 人设依据 | 对照 THBWiki 收录的官方资料，记录 92 个来源页面及修订号；4 条评测另有身份推断说明 |
 | 数据质检 | JSON/子结构、重复对白、跨集合文本重叠、重建一致性；不等同于人工验收 |
 | 手写 LoRA 训练 | 已实现，只对模型答案计算 loss |
-| 训练配置 | 默认只接入 208 条已重写子集，供试训，不混入待改旧数据 |
-| 评测集 | 200 个位置中已重写 20 条，其余 180 条待改；当前只用这 20 条小样本检查 |
+| 训练配置 | 默认只接入 1000 条已重写子集，供试训，不混入待改旧数据 |
+| 评测集 | 全部 200 条已重写并接入默认评测入口 |
 | 训练后权重 | 尚未发布 |
 
-这批覆盖咲夜、琪露诺、妖梦、觉、恋、永琳、辉夜、妹红、蕾米莉亚、芙兰朵露。每条场景、玩家输入和完整回答直接撰写，不调用付费模型 API，不使用台词模板扩充数量。脚本只负责填充 JSON 的空字段、组装数据和校验，不负责创作对白。
+累计重写 1000 条训练、200 条评测，分别覆盖 49、97 个项目 NPC 名称（包含别名，不等于独立角色数）。每条场景、玩家输入和完整回答直接撰写，不调用付费模型 API，不使用台词模板扩充数量。脚本只负责填充 JSON 的空字段、组装数据和校验，不负责创作对白。
+
+有 4 条评测需要特别说明：项目中的“天独铭”与“天肱”分别使用 `npc_enoko`、`npc_biten`。据此暂按三头慧之子、孙美天修正人设，保留原名称与数据位置；这是基于项目 ID 的推断，不是官方别名，也尚未经用户确认。详见 [`data/legacy_identity_mapping.json`](data/legacy_identity_mapping.json)。未改动游戏 NPC 或存档。
 
 `reviewed` 表示助手对照来源重写并检查过，**不是用户已验收，也不是官方对白**。具体剧情是为游戏新写的虚构情境；THBWiki 的二创梗不作为官方事实，《求闻史纪》等书中角色的推测也不直接当成真相。
 
@@ -43,11 +45,11 @@ python data/quality_check.py data/npc_dialogue_reviewed.json data/npc_eval_revie
 正常情况下会看到：
 
 ```text
-data/npc_dialogue_reviewed.json: 共检查 208 条样本
-description 唯一文本 208/208
+data/npc_dialogue_reviewed.json: 共检查 1000 条样本
+description 唯一文本 1000/1000
 全部通过 ✓
-data/npc_eval_reviewed.json: 共检查 20 条样本
-description 唯一文本 20/20
+data/npc_eval_reviewed.json: 共检查 200 条样本
+description 唯一文本 200/200
 全部通过 ✓
 npc_dialogue_reviewed.json ↔ npc_eval_reviewed.json: exact prompt 重叠 0
 npc_dialogue_reviewed.json ↔ npc_eval_reviewed.json: exact output 重叠 0
@@ -64,7 +66,7 @@ npc_dialogue_reviewed.json ↔ npc_eval_reviewed.json: exact description 重叠 
 - 是否存在完全重复的 output；
 - 训练集和评测集之间是否有完全相同的 prompt、output 或 description。
 
-完整混合文件目前仍有 44 条跨训练/评测相同对白，完整检查会失败；这些仍属待重写内容，不应关闭检查来凑“全部通过”。字符相似度也只用于找疑似近重复，不能证明语义隔离或人物塑造质量。检查结果与局限见 [`data/CANON_REWRITE.md`](data/CANON_REWRITE.md)。
+重写子集和完整文件目前均通过结构检查，跨训练/评测的完全相同 prompt、output、description 均为 0。但完整训练文件中仍有 2000 条旧模板数据，结构通过不代表内容合格。字符相似度也只用于找疑似近重复，不能证明语义隔离或人物塑造质量。检查结果与局限见 [`data/CANON_REWRITE.md`](data/CANON_REWRITE.md)。
 
 ## 数据集是怎么来的
 
@@ -72,7 +74,7 @@ npc_dialogue_reviewed.json ↔ npc_eval_reviewed.json: exact description 重叠 
 
 新的内容源在 [`data/curated/`](data/curated/)。每行分别是集合、NPC、案例名、场景、玩家输入、完整回答和明确的状态变化。没有替换词库，也没有循环拼接对白；固定 JSON 空字段不是台词模板。
 
-[`data/canon_profiles.json`](data/canon_profiles.json) 分开记录官方事实摘要、创作语气建议和需避免的二创刻板印象。页面版本与出处在审校清单中；整页 Wiki 抓取内容只放忽略提交的 `.cache/canon/`，不复制进训练答案。
+[`data/canon_profiles.json`](data/canon_profiles.json) 及同目录 `canon_profiles_002.json` 至 `canon_profiles_016.json` 分开记录官方事实摘要、创作语气建议和需避免的二创刻板印象。页面版本与出处在审校清单中；整页 Wiki 抓取内容只放忽略提交的 `.cache/canon/`，不复制进训练答案。
 
 编辑完成后组装并检查：
 
@@ -81,6 +83,8 @@ python scripts/build_curated_dataset.py --write
 python scripts/build_curated_dataset.py
 python data/quality_check.py data/npc_dialogue_reviewed.json data/npc_eval_reviewed.json
 python -m unittest discover -s tests -v
+python scripts/verify_rewrite_preservation.py
+python scripts/check_backend_contract.py --touhou-root ../touhou
 ```
 
 新样本只替换对应角色原有位置，其余内容保留。组装器会校验数量、原文件是否被单独修改、输出结构和近重复；默认无 `--write` 时只读检查。增加新角色前需先核查该角色官方来源，不要把未知名字或项目自设强行认定为官方角色。
@@ -110,7 +114,7 @@ python scripts/extract_saveback_anchors.py --save-root /path/to/touhousaveback
 1. 游戏运行时会把完整 prompt 作为一条 `user` 消息发送，不会另外拆出 `system` 消息。训练和推理脚本也必须保持这个格式。
 2. `output` 本身是一个 JSON 字符串，所以文件中会看到转义后的双引号。解析外层 JSON 后，output 还要能再次解析成对象。
 
-原规模文件 [`data/npc_dialogue.json`](data/npc_dialogue.json) 和 [`data/npc_eval.json`](data/npc_eval.json) 处于新旧混合迁移阶段。试训请用 `npc_dialogue_reviewed.json` 和 `npc_eval_reviewed.json`，不要把混合文件直接用于正式训练。
+原规模训练文件 [`data/npc_dialogue.json`](data/npc_dialogue.json) 仍是 1000 条重写与 2000 条旧数据的混合文件；[`data/npc_eval.json`](data/npc_eval.json) 的 200 条已全部重写。试训统一使用 `npc_dialogue_reviewed.json` 和 `npc_eval_reviewed.json`，不要把混合训练文件直接用于正式训练。
 
 ## 游戏真正需要的三个子结构
 
@@ -265,7 +269,7 @@ python infer.py --base-only
 
 ## 评测
 
-默认使用不进入训练的 20 条 `data/npc_eval_reviewed.json`。题目同时包含应该更新和不应该更新状态的情况，但样本太少，不能外推全角色质量。训练完成后运行：
+默认使用不进入训练的 200 条 `data/npc_eval_reviewed.json`。题目同时包含应该更新和不应该更新状态的情况。多数角色只有 2 条，且两个集合由同一助手编写，不能据此获得可靠的逐角色质量结论或视为独立盲测。训练完成后运行：
 
 ```bash
 python eval/eval.py --adapter saves/qwen2-1.5b-npc-hf --skip-judge
@@ -301,9 +305,9 @@ DEEPSEEK_API_KEY=local
 ├── configs/                    # LLaMA-Factory 训练配置
 ├── data/
 │   ├── npc_dialogue.json       # 3000 条，新旧混合，迁移中
-│   ├── npc_eval.json           # 200 条，新旧混合，迁移中
-│   ├── npc_dialogue_reviewed.json # 208 条直接重写的试训子集
-│   ├── npc_eval_reviewed.json  # 20 条直接重写的评测子集
+│   ├── npc_eval.json           # 200 条，已全部重写
+│   ├── npc_dialogue_reviewed.json # 1000 条直接重写的试训子集
+│   ├── npc_eval_reviewed.json  # 200 条直接重写的评测集
 │   ├── curated/               # 逐条撰写原稿，不由模板生成
 │   ├── canon_profiles.json    # 官方事实摘要与创作约束
 │   ├── canon_review_manifest.json # 来源、进度、逐条指纹和诊断
@@ -324,7 +328,8 @@ DEEPSEEK_API_KEY=local
 
 ## 接下来要做的事
 
-- 继续逐批重写剩余 2792 条训练和 180 条评测记录，核实角色别名和来源；
+- 本轮要求的 1000 条训练和全部 200 条评测已重写；剩余 2000 条旧训练数据不在本轮范围，也不进入默认训练；
+- 请用户确认“天独铭 / 天肱”的项目 ID 身份映射；
 - 请用户审阅这批对白，检查是否仍有过于相似的节奏、说教口气或缺乏人物特征的回答；
 - 增补多轮冲突、正反状态变化、交易等覆盖；再做实际基座/微调对比；
 - 增加近似语义去重和按角色留出的泛化评测，而不只检查完全重复；

@@ -1,0 +1,21 @@
+{
+  "requested_total_train": 1000,
+  "requested_total_eval": 200,
+  "paid_api_allowed": false,
+  "method": "Assistant directly authors each complete record; scripts only assemble and validate",
+  "new_train_quotas": {
+    "博丽灵梦":32,"雾雨魔理沙":20,"红美铃":20,"帕秋莉":20,"爱丽丝":20,
+    "西行寺幽幽子":20,"八云紫":20,"八云蓝":20,"橙":20,"射命丸文":20,
+    "犬走椛":20,"东风谷早苗":20,"八坂神奈子":20,"洩矢诹访子":20,"上白泽慧音":20,
+    "河城荷取":20,"铃仙":20,"多多良小伞":20,"圣白莲":20,"寅丸星":20,
+    "村纱水蜜":20,"封兽鵺":20,"物部布都":20,"丰聪耳神子":20,"苏我屠自古":20,
+    "二岩猯藏":20,"秦心":20,"今泉影狼":20,"赤蛮奇":20,"堀川雷鼓":20,
+    "风见幽香":20,"小野冢小町":20,"四季映姬·亚玛萨那度":20,"火焰猫燐":20,"灵乌路空":20,
+    "莉格露·奈特巴格":20,"米斯蒂娅·萝蕾拉":20,"桑尼·米尔克":20,"露娜·切云德":20
+  },
+  "prior_rewritten_train":208,
+  "eval_policy":"Rewrite every slot after checking sources. Preserve all NPC labels and slots. Two legacy labels are corrected by project-ID inference; see legacy_identity_mapping.json. No unrelated NPC replacement or game/save migration.",
+  "status":"completed_1000_train_200_eval_with_explicit_identity_inferences",
+  "human_acceptance":"pending",
+  "identity_inferred_eval_records":4
+}
