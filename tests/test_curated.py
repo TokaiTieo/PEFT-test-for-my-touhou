@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -106,18 +107,33 @@ class CuratedDatasetTests(unittest.TestCase):
 
     def test_requested_milestone_and_legacy_mapping_are_explicit(self):
         target = builder.read(ROOT / "data/rewrite_target.json")
-        self.assertEqual(self.manifest["progress"]["train"]["rewritten"], target["requested_total_train"])
+        current = self.manifest["progress"]["train"]["rewritten"]
+        self.assertGreaterEqual(current, target["prior_rewritten_train"])
+        self.assertLessEqual(current, target["requested_total_train"])
+        if target["status"].startswith("completed_"):
+            self.assertEqual(current, target["requested_total_train"])
         self.assertFalse(target["paid_api_allowed"])
         self.assertEqual(self.manifest["progress"]["eval"]["rewritten"], target["requested_total_eval"])
         self.assertEqual(self.manifest["progress"]["eval"]["pending_by_npc"], {})
         resolution = self.manifest["identity_resolution"]
-        self.assertEqual(resolution["project_id_inferred_records"], 4)
-        self.assertEqual(resolution["other_source_backed_records"], 1196)
+        inferred = sum(r["npc"] in {"天独铭", "天肱"} for r in self.records)
+        self.assertEqual(resolution["project_id_inferred_records"], inferred)
+        self.assertEqual(resolution["other_source_backed_records"], len(self.records) - inferred)
         self.assertEqual(target["identity_inferred_eval_records"], 4)
         mapping = builder.read(ROOT / "data/legacy_identity_mapping.json")
         self.assertEqual({r["legacy_label"] for r in mapping["mappings"]}, {"天独铭", "天肱"})
         for row in mapping["mappings"]:
             self.assertEqual(self.profiles[row["legacy_label"]]["source_title"], row["source_title"])
+
+    def test_previous_records_cannot_be_reordered(self):
+        records = copy.deepcopy(self.records)
+        first = records[0]
+        second = next(i for i, r in enumerate(records[1:], 1)
+                      if (r["split"], r["npc"]) == (first["split"], first["npc"]))
+        records[0], records[second] = records[second], records[0]
+        with patch.object(builder, "load_authored", return_value=records):
+            with self.assertRaisesRegex(ValueError, "Previously authored record moved"):
+                builder.build()
 
 
 if __name__ == "__main__":

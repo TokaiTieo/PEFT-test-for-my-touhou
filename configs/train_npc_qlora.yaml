@@ -15,7 +15,7 @@ lora_target: all
 
 ### dataset
 # ⚠️ 游戏真实 prompt（prompts/npc_dialogue.txt 填充后）很长，1024 会截断，云端用 4096
-# 人设重写迁移期间只使用已重写子集；不是全量正式训练配置。
+# 默认使用全部重写数据（3000 训练 / 200 评测）；数据已齐，效果尚待验证。
 dataset: npc_dialogue_reviewed
 eval_dataset: npc_eval_reviewed
 template: qwen

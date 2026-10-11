@@ -1,7 +1,7 @@
 """评测脚本：微调前 vs 微调后（《东方异变录》契约版）。
 
 流程：
-1. data/npc_eval_reviewed.json 已重写子集，基座模型和微调后模型各生成一遍
+1. data/npc_eval_reviewed.json 全部 200 条已重写评测，基座模型和微调后模型各生成一遍
 2. 自动指标（不调 API）：
    - JSON 可解析率
    - 核心字段完整率（description / is_dead）

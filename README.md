@@ -12,7 +12,7 @@
 
 ## 旧版数据的训练结果（历史记录）
 
-以下数字、曲线和权重链接保留自远端已有实验记录，本轮未重新运行或独立复核。它们对应重写前的数据，**不是本次 1000/200 条重写数据的效果**。新版还需要重新训练和评测；旧版格式分数也不能证明人设或语言质量合格。
+以下数字、曲线和权重链接保留自远端已有实验记录，本轮未重新运行或独立复核。它们对应重写前的数据，**不是新版 3000/200 条重写数据的效果**。新版还需要重新训练和评测；旧版格式分数也不能证明人设或语言质量合格。
 
 第一轮基线已完成：AutoDL RTX 3090 24G，LLaMA-Factory，LoRA r16/alpha32，bf16，cutoff 4096，等效 batch 16，3 epochs（564 步）。1.5B 训练 43 分钟，7B 约 2 小时。
 
@@ -79,28 +79,28 @@ train/eval 缓降无分叉（eval_loss：ep1 0.0554 → 终 0.0446）。7B 曲�
 
 ## 目前做到哪了
 
-目前正在重写训练数据，**还不能把原有 3000 条当成高质量正式训练集**。旧数据主要由模板程序拼装：即使句子不完全相同，也可能只是换名字、物品或措辞。之前仅凭条数和 JSON 合规就建议开始正式训练，不够严谨。
+2026-10-11 已补完剩余 2000 条，累计 **3000 条训练、200 条评测全部重写**，默认入口已接入。旧版由模板程序拼装的回答已全部替换，但“重写完成”仍不等于“模型效果已验证”：还需要验收文本、试训和游戏内测试。
 
 此前已完成旧版基线训练并发布权重，记录保留在上方；本轮交付的是新版数据，不是新的模型权重。
 
 | 项目 | 当前状态 |
 |---|---|
 | 后端 JSON 契约 | 保留原有 14 字段训练格式；当前对话契约实际忽略 `is_dead`、`new_location` |
-| 训练数据 | 3000 个位置中已逐条重写 1000 条，其余 2000 条保留但不进入默认训练 |
-| 人设依据 | 对照 THBWiki 收录的官方资料，记录 92 个来源页面及修订号；4 条评测另有身份推断说明 |
+| 训练数据 | 3000 个原位置全部逐条重写；此前完成的 1000 条保持不变 |
+| 人设依据 | 对照 THBWiki 收录的官方资料，记录 92 个来源页面及修订号；42 条训练和 4 条评测另有身份推断说明 |
 | 数据质检 | JSON/子结构、重复对白、跨集合文本重叠、重建一致性；不等同于人工验收 |
 | 手写 LoRA 训练 | 已实现，只对模型答案计算 loss |
-| 训练配置 | 默认只接入 1000 条已重写子集，供试训，不混入待改旧数据 |
+| 训练配置 | 1.5B、7B 和 smoke 入口使用 reviewed 数据；完整训练入口现为 3000 条 |
 | 评测集 | 全部 200 条已重写并接入默认评测入口 |
 | 训练后权重 | 旧版已发布（见上）；本次重写数据尚未训练或发布新权重 |
 
-累计重写 1000 条训练、200 条评测，分别覆盖 49、97 个项目 NPC 名称（包含别名，不等于独立角色数）。每条场景、玩家输入和完整回答直接撰写，不调用付费模型 API，不使用台词模板扩充数量。脚本只负责填充 JSON 的空字段、组装数据和校验，不负责创作对白。
+训练和评测各覆盖 97 个项目 NPC 名称（包含别名，不等于独立角色数）。本轮经用户同意，由主助手与三个协作助手分工直接撰写，再统一检查并按角色抽读、修订。没有调用付费模型 API，也没有用程序拼接或改写对白；脚本只填充 JSON 空字段、组装数据和校验。此前 1000 条训练及全部 200 条评测已与上一轮提交逐条核对，内容保持不变。
 
-有 4 条评测需要特别说明：项目中的“天独铭”与“天肱”分别使用 `npc_enoko`、`npc_biten`。据此暂按三头慧之子、孙美天修正人设，保留原名称与数据位置；这是基于项目 ID 的推断，不是官方别名，也尚未经用户确认。详见 [`data/legacy_identity_mapping.json`](data/legacy_identity_mapping.json)。未改动游戏 NPC 或存档。
+有 42 条训练和 4 条评测需要特别说明：项目中的“天独铭”与“天肱”分别使用 `npc_enoko`、`npc_biten`。据此暂按三头慧之子、孙美天修正人设，保留原名称与数据位置；这是基于项目 ID 的推断，不是官方别名，也尚未经用户单独确认。详见 [`data/legacy_identity_mapping.json`](data/legacy_identity_mapping.json)。未改动游戏 NPC 或存档。
 
 `reviewed` 表示助手对照来源重写并检查过，**不是用户已验收，也不是官方对白**。具体剧情是为游戏新写的虚构情境；THBWiki 的二创梗不作为官方事实，《求闻史纪》等书中角色的推测也不直接当成真相。
 
-逐条进度、原样本指纹和来源见 [`data/canon_review_manifest.json`](data/canon_review_manifest.json)。尚未写入该清单的索引均为待重写；[`data/dataset_manifest.json`](data/dataset_manifest.json) 仅保留旧版模板数据的历史配额，不再代表当前质量状态。
+逐条进度、原样本指纹和来源见 [`data/canon_review_manifest.json`](data/canon_review_manifest.json)，目前待重写数量为 0；[`data/dataset_manifest.json`](data/dataset_manifest.json) 仅保留旧版模板数据的历史配额，不代表当前质量状态。
 
 ## 先跑一次数据检查
 
@@ -114,8 +114,8 @@ python data/quality_check.py data/npc_dialogue_reviewed.json data/npc_eval_revie
 正常情况下会看到：
 
 ```text
-data/npc_dialogue_reviewed.json: 共检查 1000 条样本
-description 唯一文本 1000/1000
+data/npc_dialogue_reviewed.json: 共检查 3000 条样本
+description 唯一文本 3000/3000
 全部通过 ✓
 data/npc_eval_reviewed.json: 共检查 200 条样本
 description 唯一文本 200/200
@@ -135,7 +135,7 @@ npc_dialogue_reviewed.json ↔ npc_eval_reviewed.json: exact description 重叠 
 - 是否存在完全重复的 output；
 - 训练集和评测集之间是否有完全相同的 prompt、output 或 description。
 
-重写子集和完整文件目前均通过结构检查，跨训练/评测的完全相同 prompt、output、description 均为 0。但完整训练文件中仍有 2000 条旧模板数据，结构通过不代表内容合格。字符相似度也只用于找疑似近重复，不能证明语义隔离或人物塑造质量。检查结果与局限见 [`data/CANON_REWRITE.md`](data/CANON_REWRITE.md)。
+reviewed 文件和保留原位置的完整文件均通过结构检查，跨训练/评测的完全相同 prompt、output、description 均为 0。抽读也修订了仅靠字符串检测发现不了的撞题情境，但这不证明全部语义隔离或人物塑造已经合格。检查结果与局限见 [`data/CANON_REWRITE.md`](data/CANON_REWRITE.md)。
 
 ## 数据集是怎么来的
 
@@ -156,7 +156,7 @@ python scripts/verify_rewrite_preservation.py
 python scripts/check_backend_contract.py --touhou-root ../touhou
 ```
 
-新样本只替换对应角色原有位置，其余内容保留。组装器会校验数量、原文件是否被单独修改、输出结构和近重复；默认无 `--write` 时只读检查。增加新角色前需先核查该角色官方来源，不要把未知名字或项目自设强行认定为官方角色。
+新样本只替换对应角色原有位置。组装器会校验数量、原文件是否被单独修改、已写记录是否被重排、输出结构和近重复；默认无 `--write` 时只读检查。保留检查另外核对上一轮已完成的 1000/200 条，避免续写覆盖旧成果。增加新角色前需先核查官方来源，不要把未知名字或项目自设强行认定为官方角色。
 
 旧存档锚点 [`data/saveback_anchors.json`](data/saveback_anchors.json) 仍保留供后续逐条改写参考。需要重新提取时运行：
 
@@ -183,7 +183,7 @@ python scripts/extract_saveback_anchors.py --save-root /path/to/touhousaveback
 1. 游戏运行时会把完整 prompt 作为一条 `user` 消息发送，不会另外拆出 `system` 消息。训练和推理脚本也必须保持这个格式。
 2. `output` 本身是一个 JSON 字符串，所以文件中会看到转义后的双引号。解析外层 JSON 后，output 还要能再次解析成对象。
 
-原规模训练文件 [`data/npc_dialogue.json`](data/npc_dialogue.json) 仍是 1000 条重写与 2000 条旧数据的混合文件；[`data/npc_eval.json`](data/npc_eval.json) 的 200 条已全部重写。试训统一使用 `npc_dialogue_reviewed.json` 和 `npc_eval_reviewed.json`，不要把混合训练文件直接用于正式训练。
+[`data/npc_dialogue.json`](data/npc_dialogue.json) 保留原来的 3000 个位置，内容已全部重写；[`data/npc_eval.json`](data/npc_eval.json) 的 200 条也已全部重写。默认统一使用 `npc_dialogue_reviewed.json` 和 `npc_eval_reviewed.json`。现在两套文件包含相同的重写样本，但排列顺序可能不同，不要拼接两套文件重复训练。
 
 ## 游戏真正需要的三个子结构
 
@@ -255,7 +255,7 @@ python scripts/extract_saveback_anchors.py --save-root /path/to/touhousaveback
 
 ## 训练方式一：LLaMA-Factory
 
-可用来试训当前已重写子集；完整数据重写和用户验收尚未完成。
+可用来训练已全部重写的 3000 条数据。用户文本验收和新版效果验证尚未完成，建议先检查数据和运行环境，再试训。
 
 ```bash
 git clone --depth 1 https://github.com/hiyouga/LLaMA-Factory.git
@@ -269,7 +269,7 @@ pip install -e ".[torch,metrics]"
 2. 把 `configs/dataset_info.snippet.json` 中的条目合并进 LLaMA-Factory 的 `data/dataset_info.json`；
 3. 使用本仓库中的 YAML 启动训练。
 
-子集试训：
+使用重写数据试训：
 
 ```bash
 llamafactory-cli train /path/to/PEFT-test-for-my-touhou/configs/train_npc_qlora.yaml
@@ -391,14 +391,14 @@ DEEPSEEK_API_KEY=local
 
 ```text
 ├── configs/
-│   ├── train_npc_qlora.yaml       # 1.5B 重写子集试训配置
-│   ├── train_npc_qlora_7b.yaml    # 7B 重写子集试训配置
+│   ├── train_npc_qlora.yaml       # 1.5B 重写数据训练配置
+│   ├── train_npc_qlora_7b.yaml    # 7B 重写数据训练配置
 │   ├── train_npc_qlora_smoke.yaml # smoke test 配置
 │   └── dataset_info.snippet.json  # LLaMA-Factory 数据集注册片段
 ├── data/
-│   ├── npc_dialogue.json       # 3000 条，新旧混合，迁移中
+│   ├── npc_dialogue.json       # 3000 条，已全部重写，保留原位置
 │   ├── npc_eval.json           # 200 条，已全部重写
-│   ├── npc_dialogue_reviewed.json # 1000 条直接重写的试训子集
+│   ├── npc_dialogue_reviewed.json # 3000 条直接重写的默认训练集
 │   ├── npc_eval_reviewed.json  # 200 条直接重写的评测集
 │   ├── curated/               # 逐条撰写原稿，不由模板生成
 │   ├── canon_profiles.json    # 官方事实摘要与创作约束
@@ -422,7 +422,7 @@ DEEPSEEK_API_KEY=local
 
 ## 接下来要做的事
 
-- 本轮要求的 1000 条训练和全部 200 条评测已重写；剩余 2000 条旧训练数据不在本轮范围，也不进入默认训练；
+- 3000 条训练和全部 200 条评测已重写；下一步是文本验收与试训，不再用补足条数代替质量评估；
 - 请用户确认“天独铭 / 天肱”的项目 ID 身份映射；
 - 请用户审阅这批对白，检查是否仍有过于相似的节奏、说教口气或缺乏人物特征的回答；
 - 增补多轮冲突、正反状态变化、交易等覆盖；再做实际基座/微调对比；

@@ -21,7 +21,7 @@ from peft import LoraConfig, get_peft_model
 MODEL = "Qwen/Qwen2-1.5B-Instruct"   # 或本地路径
 DATA = "data/npc_dialogue_reviewed.json"
 EVAL_DATA = "data/npc_eval_reviewed.json"
-# 当前仅是直接重写后的试训子集；不要混入尚未审校的旧模板数据。
+# 默认使用全部直接重写数据（3000 训练 / 200 评测）；仍需文本验收和效果验证。
 OUT = "saves/qwen2-1.5b-npc-hf"
 MAX_LENGTH = int(os.environ.get("NPC_MAX_LENGTH", "4096"))
 

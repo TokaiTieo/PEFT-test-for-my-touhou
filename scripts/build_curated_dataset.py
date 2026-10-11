@@ -180,6 +180,8 @@ def build():
                 raise ValueError(f"{split}/{name}: {len(authored)} records vs {len(slots[name])} slots")
             for index, record in zip(slots[name], authored):
                 old = prior_records.get((split, index))
+                if old and old["id"] != record["id"]:
+                    raise ValueError(f"Previously authored record moved at {split} index {index}; append without reordering")
                 if old and digest(full[index]) != old["compiled_sha256"]:
                     raise ValueError(f"Dataset independently edited at {split} index {index}; reconcile first")
                 original_hash = old["original_sha256"] if old else digest(full[index])
@@ -205,8 +207,9 @@ def build():
     legacy_mapping = read(mapping_path) if mapping_path.exists() else {"mappings": []}
     inferred_names = {row["legacy_label"] for row in legacy_mapping["mappings"]}
     inferred_count = sum(record["npc"] in inferred_names for record in records)
-    manifest = dict(schema_version=1, status="partial_rewrite_not_full_training_ready",
-                    authoring="Assistant directly wrote complete scenes, prompts and responses; no paid model API; no response templates.",
+    complete = all(p["pending"] == 0 for p in progress.values())
+    manifest = dict(schema_version=1, status="fully_rewritten_awaiting_human_review" if complete else "partial_rewrite_not_full_training_ready",
+                    authoring="User-authorized collaborating assistants directly wrote complete scenes, prompts and responses; primary assistant reviewed samples and coordinated corrections; no paid model API; no response templates.",
                     human_review_completed=False, baseline_commit="0542f51c31313664934b18153527497d354f5b72",
                     scope=f"{len({r['npc'] for r in records})} NPC labels; fictional game scenarios, not official dialogue or recovered save transcripts",
                     contract_note="Legacy 14-field training shape retained; current DialogueTurnResult ignores is_dead/new_location.",

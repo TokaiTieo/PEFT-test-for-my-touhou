@@ -1,5 +1,5 @@
 {
-  "_comment": "只注册已直接重写的试训子集；将两个 reviewed JSON 复制进 LLaMA-Factory 的 data/。仍需用户审阅，不代表完整训练集已完成。",
+  "_comment": "注册全部直接重写数据（3000 训练 / 200 评测）；将两个 reviewed JSON 复制进 LLaMA-Factory 的 data/。文本仍需用户审阅，模型效果尚待验证。",
   "npc_dialogue_reviewed": {
     "file_name": "npc_dialogue_reviewed.json"
   },

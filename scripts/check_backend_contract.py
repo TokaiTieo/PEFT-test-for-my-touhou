@@ -1,5 +1,6 @@
 """Read-only check with the actual sibling game's parser; no server or API calls."""
 import argparse
+import importlib.util
 import json
 from pathlib import Path
 import sys
@@ -28,7 +29,14 @@ def main():
         raise SystemExit("Missing game backend; provide --touhou-root /path/to/touhou")
     sys.dont_write_bytecode = True
     sys.path.insert(0, str(args.touhou_root.resolve()))
-    from backend.services.ai_contracts import DialogueTurnResult, parse_turn_response
+    # Load the actual contract module, without importing services/__init__.py.
+    # That package eagerly imports AI clients unrelated to this offline check.
+    path = args.touhou_root.resolve() / "backend/services/ai_contracts.py"
+    spec = importlib.util.spec_from_file_location("npc_dataset_backend_contract", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    DialogueTurnResult, parse_turn_response = module.DialogueTurnResult, module.parse_turn_response
     count = 0
     for filename in ("npc_dialogue_reviewed.json", "npc_eval_reviewed.json"):
         samples = json.loads((root / "data" / filename).read_text(encoding="utf-8"))

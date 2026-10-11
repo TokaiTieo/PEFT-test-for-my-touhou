@@ -32,6 +32,21 @@ def main():
             if builder.npc_name(before) != builder.npc_name(after):
                 raise ValueError(f"{split}: NPC identity changed without explicit migration at {index}")
         result[split] = dict(rewritten_verified=len(ledger), untouched_verified=untouched)
+    target = builder.read(builder.ROOT / "data/rewrite_target.json")
+    continuation = target.get("continuation_baseline_commit")
+    if continuation:
+        previous_manifest = json.loads(subprocess.check_output(
+            ["git", "show", f"{continuation}:data/canon_review_manifest.json"],
+            cwd=builder.ROOT).decode("utf-8-sig"))
+        checked = {"train": 0, "eval": 0}
+        for split, filename in builder.FILES.items():
+            current = builder.read(builder.ROOT / f"data/{filename}.json")
+            for row in previous_manifest["records"]:
+                if row["split"] == split:
+                    if builder.digest(current[row["index"]]) != row["compiled_sha256"]:
+                        raise ValueError(f"Previously reviewed record changed at {split}/{row['index']}")
+                    checked[split] += 1
+        result["previous_reviewed_unchanged"] = checked
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
